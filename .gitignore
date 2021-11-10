@@ -1,0 +1,11 @@
+models/
+exp/
+results/
+pbslogs/
+pbsscripts/
+*.o*
+*.pbs
+*.sh
+*.DS_Store
+*__pycache__
+*.ipynb

@@ -1,0 +1,15 @@
+{
+    "root":"/hpctmp/e0425991/datasets/bdd100k/bdd100k/MOT/",
+    "train":
+    {
+        "bdd100k":"/home/svu/e0425991/FairMOT-X/src/data/bdd100k.train"
+    },
+    "test_emb":
+    {
+        "bdd100k":"/home/svu/e0425991/FairMOT-X/src/data/bdd100k.val"
+    },
+    "test":
+    {
+        "bdd100k":"/home/svu/e0425991/FairMOT-X/src/data/bdd100k.val"
+    }
+}
