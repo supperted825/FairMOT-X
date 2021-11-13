@@ -120,6 +120,14 @@ class opts(object):
                                  action='store_true',
                                  help='include validation in training and '
                                       'test on test set')
+        
+        # training augmentation
+        self.parser.add_argument('--augment',
+                                 action='store_true',
+                                 help='whether to augment dataset')
+        self.parser.add_argument('--mosaic',
+                                 action='store_true',
+                                 help='whether to use mosaic for augmentation')
 
         # demo
         self.parser.add_argument('--input_video', default="", help='video to demo')
@@ -236,9 +244,9 @@ class opts(object):
                                  type=int,
                                  default=128,  # 128, 256, 512
                                  help='feature dim for reid')
-        self.parser.add_argument('--input-wh',
+        self.parser.add_argument('--input_wh',
                                  type=tuple,
-                                 default=(1088, 608),  # (768, 448) or (1088, 608)
+                                 default=(1024, 576),  # (768, 448) or (1088, 608)
                                  help='net input resplution')
         self.parser.add_argument('--multi_scale',
                                  type=bool,
@@ -318,7 +326,7 @@ class opts(object):
             if i < rest_batch_size % (len(opt.gpus) - 1):
                 slave_chunk_size += 1
             opt.chunk_sizes.append(slave_chunk_size)
-        print('training chunk_sizes:', opt.chunk_sizes)
+        print('Training Chunk Sizes:', opt.chunk_sizes)
 
         opt.root_dir = os.path.join(os.path.dirname(__file__), '..', '..')
         opt.exp_dir = os.path.join(opt.root_dir, 'exp', opt.task)
@@ -337,62 +345,14 @@ class opts(object):
         :param dataset:
         :return:
         """
-        input_h, input_w = dataset.default_input_wh
+        
         opt.num_classes = dataset.num_classes
 
         for reid_id in opt.reid_cls_ids.split(','):
             if int(reid_id) > opt.num_classes - 1:
-                print('[Err]: configuration conflict of reid_cls_ids and num_classes!')
+                print('[ERROR]: Configuration conflict of reid_cls_ids and num_classes!')
                 return
 
-        # input_h(w): opt.input_h overrides opt.input_res overrides dataset default
-        opt.input_h = input_h
-        opt.input_w = input_w
-        opt.output_h = opt.input_h // opt.down_ratio
-        opt.output_w = opt.input_w // opt.down_ratio
-        opt.input_res = max(opt.input_h, opt.input_w)
-        opt.output_res = max(opt.output_h, opt.output_w)
-
-        # if opt.task == 'mot':
-        #     opt.heads = {'hm': opt.num_classes,
-        #                  'wh': 2 if not opt.cat_spec_wh else 2 * opt.num_classes,
-        #                  'id': opt.reid_dim}
-        #     if opt.reg_offset:
-        #         opt.heads.update({'reg': 2})
-
-        #     # @even: 用nID_dict取代nID
-        #     if opt.id_weight > 0:
-        #         opt.nID_dict = dataset.nID_dict
-
-        # else:
-        #     assert 0, 'task not defined!'
-
         print("Heads are Predefined in YOLOX!")
-
-        return opt
-
-    def init(self, args=''):
-        opt = self.parse(args)
-
-        default_dataset_info = {
-            'mot': {'default_input_wh': [opt.input_wh[1], opt.input_wh[0]],  # [608, 1088], [320, 640]
-                    'num_classes': len(opt.reid_cls_ids.split(',')),  # 1
-                    'mean': [0.408, 0.447, 0.470],
-                    'std': [0.289, 0.274, 0.278],
-                    'nID_dict': {}},
-        }
-
-        class Struct:
-            def __init__(self, entries):
-                for k, v in entries.items():
-                    self.__setattr__(k, v)
-
-        h_w = default_dataset_info[opt.task]['default_input_wh']
-        opt.img_size = (h_w[1], h_w[0])
-        print('Net input image size: {:d}×{:d}'.format(h_w[1], h_w[0]))
-
-        dataset = Struct(default_dataset_info[opt.task])
-        # opt.dataset = dataset.dataset
-        opt = self.update_dataset_info_and_set_heads(opt, dataset)
 
         return opt
