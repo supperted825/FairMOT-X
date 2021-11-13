@@ -18,22 +18,31 @@ from tqdm import tqdm
 
 from utils.utils import xyxy2xywh, xywh2xyxy, ltwh2xywh
 
+cls2id = {
+    'pedestrian': 0,
+    'rider': 1,
+    'car': 2,
+    'truck': 3,
+    'bus': 4,
+    'train': 5,
+    'motorcycle': 6,
+    'bicycle': 7
+}
+
+id2cls = {
+    0: 'pedestrian',
+    1: 'rider',
+    2: 'car',
+    3: 'truck',
+    4: 'bus',
+    5: 'train',
+    6: 'motorcycle',
+    7: 'bicycle'
+}
+
 help_url = 'https://github.com/ultralytics/yolov3/wiki/Train-Custom-Data'
 img_formats = ['.bmp', '.jpg', '.jpeg', '.png', '.tif', '.dng']
 vid_formats = ['.mov', '.avi', '.mp4']
-
-
-"""Augmentation Hyperparameters"""
-
-hyp = {
-    'hsv_h': 0.0138,  # image HSV-Hue augmentation (fraction)
-    'hsv_s': 0.678,  # image HSV-Saturation augmentation (fraction)
-    'hsv_v': 0.36,  # image HSV-Value augmentation (fraction)
-    'degrees': 1.98 * 0,  # image rotation (+/- deg)
-    'translate': 0.05 * 0,  # image translation (+/- fraction)
-    'scale': 0.5,  # image scale (+/- gain)
-    'shear': 0.641 * 0  # image shear (+/- deg)
-}
 
 # Get orientation exif tag
 for orientation in ExifTags.TAGS.keys():
@@ -301,10 +310,9 @@ class LoadStreams:  # multiple IP or RTSP cameras
 class YOLOMOT(Dataset):  # for training/testing
     def __init__(self,
                  path,
-                 img_size=(1088, 608),
+                 img_size=(576, 1024),
                  num_classes=8,
                  batch_size=16,
-                 augment=False,
                  single_cls=False,
                  opt=None):
         """
@@ -320,10 +328,10 @@ class YOLOMOT(Dataset):  # for training/testing
         
         # ------ Check for QuickLoad of Labels & IDs
         labels    = "/hpctmp/e0425991/datasets/bdd100k/bdd100k/MOT/cache/cached_labels.npy"
-        max_id_d  = "/hpctmp/e0425991/datasets/bdd100k/bdd100k/MOT/cache/max_id_dict.json"
+        tid_num   = "/hpctmp/e0425991/datasets/bdd100k/bdd100k/MOT/tid_num.json"
 
         labelsval = "/hpctmp/e0425991/datasets/bdd100k/bdd100k/MOT/cache/cached_labelsval.npy"
-        max_id_dv = "/hpctmp/e0425991/datasets/bdd100k/bdd100k/MOT/cache/max_id_dictval.json"
+        tidnumval = "/hpctmp/e0425991/datasets/bdd100k/bdd100k/MOT/tid_numval.json"
         
         # Get List of Img Files
         with open(path, 'r') as f:
@@ -343,79 +351,98 @@ class YOLOMOT(Dataset):  # for training/testing
         self.batch = bi  # batch index of each image
         self.default_input_wh = img_size
         self.num_classes = num_classes
-        self.augment = augment
+        self.augment = True # opt.augment
+        self.mosaic = opt.mosaic
         self.max_objs = opt.K
-        
-        # ----- NN Shapes & Params
         self.img_size = img_size
-        self.net_out_shape = img_size[0] / 8, img_size[1] / 8
 
         # ----- Cache labels
-        self.max_id_dict = defaultdict(int)  # cls_id => max track id
-        self.imgs = [None] * n
         self.labels = [np.zeros((0, 6), dtype=np.float32)] * n
 
         # ------ Check for QuickLoad of Image Labels
-        if os.path.exists(labels) and os.path.exists(max_id_d) and not opt.val:
-            print("Loading cached labels & max ID Dict...")
+        if os.path.exists(labels) and os.path.exists(tid_num) and not opt.val:
+            print("Loading cached labels & ID Dict...")
             self.labels = np.load(labels, allow_pickle=True)
-            with open(max_id_d, 'r', encoding='utf-8') as f:
-                self.max_id_dict = json.load(f)
+            with open(tid_num) as json_file:
+                self.tid_num = json.load(json_file)
         
-        elif os.path.exists(labelsval) and os.path.exists(max_id_dv) and opt.val:
-            print("Loading cached labels & max ID Dict...")
+        elif os.path.exists(labelsval) and os.path.exists(tidnumval) and opt.val:
+            print("Loading cached validation labels & ID Dict...")
             self.labels = np.load(labelsval, allow_picke=True)
-            with open(max_id_dv, 'r', encoding='utf-8') as f:
-                self.max_id_dict = json.load(f)
-
+            with open(tidnumval) as json_file:
+                self.tid_num = json.load(json_file)
+        
         else:
-            p_bar = tqdm(self.label_files, desc='Caching Labels')
-            nm, nf, ne, ns, nd = 0, 0, 0, 0, 0  # number missing, found, empty, datasubset, duplicate
-            for i, file in enumerate(p_bar):
-                try:
-                    with open(file, 'r') as f:
-                        lb = np.array([x.split() for x in f.read().splitlines()], dtype=np.float32)
-                except:
-                    nm += 1
-                    continue
+            # ----- Generate ID Counts
+            print("Caching Labels & Generating ID Counts...")
+            
+            self.tid_num = OrderedDict()
+            self.tid_start_index = OrderedDict()
+            
+            for ds, label_paths in self.label_files.items():  # 每个子数据集
+                max_ids_dict = defaultdict(int)  # cls_id => max track id
 
-                if lb.shape[0]:  # objects number in the image
-                    assert lb.shape[1] == 6, '!= 6 label columns: %s' % file
-                    assert (lb >= 0).all(), 'negative labels: %s' % file
-                    assert (lb[:, 2:] <= 1).all(), 'non-normalized or out of bounds coordinate labels: %s' % file
+                # 子数据集中每个label
+                for lp in tqdm(label_paths):
+                    if not os.path.isfile(lp):
+                        print('[WARNING] : Invalid Label File {}.'.format(lp))
+                        continue
 
-                    if np.unique(lb, axis=0).shape[0] < lb.shape[0]:  # duplicate rows
-                        nd += 1  # print('WARNING: duplicate rows in %s' % self.label_files[i])  # duplicate rows
+                    lb = np.loadtxt(lp)
+                    if len(lb) < 1:  # 空标签文件
+                        continue
+
+                    lb = lb.reshape(-1, 6)
+
+                    assert (lb >= 0).all(), 'Negative Labels: %s' % file
+                    assert (lb[:, 2:] <= 1).all(), 'Non-normalized or Out of Bounds Coordinates: %s' % file
+
                     if single_cls:
                         lb[:, 0] = 0  # force dataset into single-class mode: turn mc to sc
+
                     self.labels[i] = lb
+                
+                    for item in lb:  # label中每一个item(检测目标)
+                        if item[1] > max_ids_dict[int(item[0])]:  # item[0]: cls_id, item[1]: track id
+                            max_ids_dict[int(item[0])] = item[1]
 
-                    # Count Independent ID Count for Each Class
-                    for item in lb:  # For each GT object in the label file
-                        if item[1] > self.max_id_dict[int(item[0])]:  # item[0]: cls_id, item[1]: track id
-                            self.max_id_dict[int(item[0])] = int(item[1])
-
-                    nf += 1  # file found
-                else:
-                    ne += 1  # print('empty labels for image %s' % self.img_files[i])  # file empty
-
-                p_bar.desc = 'Caching labels (%g found, %g missing, %g empty, %g duplicate, for %g images)' % (nf, nm, ne, nd, n)
-
-            if nf == 0:
-                print('No labels found in %s. See %s' % (os.path.dirname(file) + os.sep, help_url))
-                exit(-1)
-
+                # track id number
+                self.tid_num[ds] = max_ids_dict  # 每个子数据集按照需要reid的cls_id组织成dict
+                
             # ----- save dicts to json to save time in future
-            if not opt.val:
+            if opt.val:
                 print("Writing cached labels & max ID dict to JSON...")
                 np.save(labels, self.labels)
-                with open(max_id_d, 'w', encoding='utf-8') as f:
-                    json.dump(self.max_id_dict, f, ensure_ascii=False, indent=4)
+                with open(tidnumval, 'w', encoding='utf-8') as f:
+                    json.dump(self.tid_num, f, ensure_ascii=False, indent=4)    
             else:
                 print("Writing cached validation labels & max ID dict to JSON...")
                 np.save(labelsval, self.labels)
-                with open(max_id_dv, 'w', encoding='utf-8') as f:
-                    json.dump(self.max_id_dict, f, ensure_ascii=False, indent=4)
+                with open(tid_num, 'w', encoding='utf-8') as f:
+                    json.dump(self.tid_num, f, ensure_ascii=False, indent=4)  
+                    
+        # @even: for MCMOT training
+        self.tid_start_idx_of_cls_ids = defaultdict(dict)
+        last_idx_dict = defaultdict(int)  # 从0开始
+        for k, v in self.tid_num.items():  # 统计每一个子数据集
+            for cls_id, id_num in v.items():  # 统计这个子数据集的每一个类别, v是一个max_ids_dict
+                self.tid_start_idx_of_cls_ids[k][int(cls_id)] = last_idx_dict[int(cls_id)]
+                last_idx_dict[int(cls_id)] += id_num
+
+        # Generate nID Dict for Building reID Classifier
+        self.nID_dict = defaultdict(int)
+        for k, v in last_idx_dict.items():
+            self.nID_dict[int(k)] = int(v)  # 每个类别的tack ids数量
+
+        for k, v in sorted(self.nID_dict.items()):
+            class_name = id2cls[k]
+            print('* Total {:d} IDs of {}'.format(v, class_name))
+
+        # print('start index', self.tid_start_index)
+        for k, v in sorted(self.tid_start_idx_of_cls_ids.items()):
+            for cls_id, start_idx in sorted(v.items()):
+                print('* Start index of dataset {} class {} is {}'
+                        .format(k, cls_id, start_idx))
 
 
     def __len__(self):
@@ -423,46 +450,52 @@ class YOLOMOT(Dataset):  # for training/testing
 
 
     def __getitem__(self, idx):
+        self.augment = True
         
-        # ----- Load Image, Labels & Track IDs
-        # Label Format: Class, Track ID, Normalised ltwh
-        img, (h, w), resize_ratio = load_image(self, idx)
+        if self.mosaic:
+            img, labels, track_ids = load_mosaic_with_ids(self, idx)
         
-        labels = []
-        x = self.labels[idx][:, [0, 2, 3, 4, 5]]  # Skip Loading Track ID
-        if x.size > 0:
-            # Normalized ltwh to pixel xyxy format:
-            # For compatibility with random_affine function
-            labels = x.copy()
-            labels[:, 1] = resize_ratio * w * x[:, 1]                  # x1 = left
-            labels[:, 2] = resize_ratio * h * x[:, 2]                  # y1 = top
-            labels[:, 3] = resize_ratio * w * (x[:, 1] + x[:, 3])      # x2 = left + w
-            labels[:, 4] = resize_ratio * h * (x[:, 2] + x[:, 4])      # y2 = top + h
-                
-        # Now We Load Track IDs
-        track_ids = self.labels[idx][:, 1]
-        track_ids -= 1  # track id starts from 1(not 0)
+        else:
+            # ----- Load Image, Labels & Track IDs
+            # Label Format: Class, Track ID, Normalised ltwh
+            img, (h, w) = load_image(self, idx)
+            resize_ratio = self.img_size[0] / img.shape[0]
+            if img.shape[:2] != self.img_size:
+                img = cv2.resize(img, self.img_size[::-1])
+            
+            labels = []
+            x = self.labels[idx][:, [0, 2, 3, 4, 5]]  # Skip Loading Track IDs
+            if x.size > 0:
+                # Normalized xywh to pixel xyxy format:
+                # For compatibility with random_affine function
+                labels = x.copy()
+                labels[:, 1] = resize_ratio * w * (x[:, 1] - x[:, 3] / 2)      # x1 = ct - w / 2
+                labels[:, 2] = resize_ratio * h * (x[:, 2] - x[:, 4] / 2)      # y1 = ct + h / 2
+                labels[:, 3] = resize_ratio * w * (x[:, 1] + x[:, 3] / 2)      # x2 = ct + w / 2
+                labels[:, 4] = resize_ratio * h * (x[:, 2] + x[:, 4] / 2)      # y2 = ct - h / 2
+            
+            # Now We Load Track IDs
+            track_ids = self.labels[idx][:, 1]
+            track_ids -= 1  # track id starts from 1 (not 0)
         
         if self.augment:
-            # Random Affine & Augment ColourSpace
-            img, labels, track_ids = random_affine_with_ids(img, labels, track_ids,
-                                                            degrees=hyp['degrees'],
-                                                            translate=hyp['translate'],
-                                                            scale=hyp['scale'],
-                                                            shear=hyp['shear'])
-            augment_hsv(img, hgain=hyp['hsv_h'], sgain=hyp['hsv_s'], vgain=hyp['hsv_v'])
+            if not self.mosaic:
+                # Random Affine & Augment ColourSpace
+                img, labels, track_ids = random_affine_with_ids(img, labels, track_ids)
+            augment_hsv(img)
 
         # Number of Labels
         nL = len(labels)
 
         # ----- Further Augmentations
         if nL:
+
             # Convert back from xyxy to xywh
             labels[:, 1:5] = xyxy2xywh(labels[:, 1:5])
             
             # Normalise Again for Easy Flipping
-            labels[:, [1,3]] /= img.shape[1]
-            labels[:, [2,4]] /= img.shape[0]
+            labels[:, [2,4]] /= self.img_size[0]
+            labels[:, [1,3]] /= self.img_size[1]
 
         if self.augment:
             
@@ -489,11 +522,15 @@ class YOLOMOT(Dataset):  # for training/testing
         if nL:
             # Scale Normalised to Pixel BBOX for Detection
             det_labels_out[:, 1] = labels[:, 0]
-            det_labels_out[:, [2, 4]] = labels[:, [1, 3]] * w
-            det_labels_out[:, [3, 5]] = labels[:, [2, 4]] * h
+            det_labels_out[:, [2, 4]] = labels[:, [1, 3]] * self.img_size[1]
+            det_labels_out[:, [3, 5]] = labels[:, [2, 4]] * self.img_size[0]
             
             # Track IDs to be Returned
             track_ids_out[:, 1] = torch.from_numpy(track_ids).long()
+
+        # Write Test Images with bbox to File
+        # test_image(img, det_labels_out[:, 2:])
+        # exit(-1)
 
         # ------ Image Transformations - BGR to RGB
         img = img[:, :, ::-1].transpose(2, 0, 1)
@@ -515,12 +552,20 @@ def load_image(self, index):
     # loads 1 image from dataset, returns img, original hw, resized hw
     path = self.img_files[index]
     img = cv2.imread(path)  # BGR
-    ratio = self.img_size[0] / img.shape[0]
-    if img.shape[:2] != self.img_size:
-        img = cv2.resize(img, self.img_size)
     assert img is not None, 'Image Not Found ' + path
-    return img, img.shape[:2], ratio
+    return img, img.shape[:2]
 
+
+def test_image(img, labels, path="/home/svu/e0425991/FairMOT-X", name="test.jpg"):
+    img = np.ascontiguousarray(img).copy()
+    for (x, y, w, h) in labels:
+        x1 = int(x-w/2)
+        y1 = int(y-h/2)
+        x2 = int(x+w/2)
+        y2 = int(y+h/2)
+        cv2.rectangle(img, pt1=(x1,y1), pt2=(x2,y2), color=(0, 0, 255), thickness=1)
+    assert cv2.imwrite(os.path.join(path, name), img)
+    
 
 def augment_hsv(img, hgain=0.5, sgain=0.5, vgain=0.5):
     r = np.random.uniform(-1, 1, 3) * [hgain, sgain, vgain] + 1  # random gains
@@ -656,10 +701,10 @@ def letterbox(img,
 def random_affine_with_ids(img,
                            targets,
                            track_ids,
-                           degrees=10,
+                           degrees=2.5,
                            translate=0.1,
                            scale=0.1,
-                           shear=10,
+                           shear=2.5,
                            border=0):
     """
     :param img:
@@ -790,6 +835,73 @@ def random_affine(img, targets=(), degrees=10, translate=.1, scale=.1, shear=10,
         targets[:, 1:5] = xy[i]
 
     return img, targets
+
+
+def load_mosaic_with_ids(self, index):
+    """
+    :param self:
+    :param index:
+    :param track_ids:
+    :return:
+    """
+
+    labels4, track_ids_4 = [], []
+    net_in_h, net_in_w = self.img_size
+    
+    # Randomly Generate Mosaic Center (Coordinates in Final Image)
+    xc = int((random.uniform(0.35, 0.65) * net_in_w))
+    yc = int((random.uniform(0.35, 0.65) * net_in_h))
+    
+    # Grab 3 Other Random Indices
+    indices = [index] + [random.randint(0, len(self.labels) - 1) for _ in range(3)]
+    
+    for i, index in enumerate(indices):
+        
+        # Load Image
+        img, (h, w) = load_image(self, index)
+        labels = self.labels[index][:, [0,2,3,4,5]]
+        track_ids = self.labels[index][:, 1]
+
+        # Generate Coordinates for Each Corner
+        # On First Run, Initialize Base Array with Arbitrary Pixel Value of 114
+        
+        if i == 0: # top left
+            img4 = np.full((net_in_h, net_in_w, 3), 114, dtype=np.uint8)
+            x1, y1, x2, y2 = max(xc - w, 0), max(yc - h, 0), xc, yc
+        elif i == 1:  # top right
+            x1, y1, x2, y2 = xc, max(yc - h, 0), min(xc + w, net_in_w), yc
+        elif i == 2:  # bottom left
+            x1, y1, x2, y2 = max(xc - w, 0), yc, xc, min(yc + h, net_in_h)
+        elif i == 3:  # bottom right
+            x1, y1, x2, y2 = xc, yc, min(xc + w, net_in_w), min(yc + h, net_in_h)
+
+        # Fitted Image Dimensions, Resize & Place
+        new_h = y2 - y1
+        new_w = x2 - x1
+        img = cv2.resize(img, (new_w, new_h))
+        img4[y1:y2, x1:x2] = img
+        
+        # Take the Opportunity to Convert Normalised XYWH to Pixel XYXY
+        for ltwh_bbox in labels:
+            bbox = np.zeros(5)
+            bbox[0] = ltwh_bbox[0]
+            bbox[1] = x1 + (ltwh_bbox[1] - ltwh_bbox[3] / 2) * new_w
+            bbox[2] = y1 + (ltwh_bbox[2] - ltwh_bbox[4] / 2) * new_h
+            bbox[3] = bbox[1] + ltwh_bbox[3] * new_w
+            bbox[4] = bbox[2] + ltwh_bbox[4] * new_h
+            labels4.append(bbox)
+
+        track_ids_4.extend(track_ids)
+
+    # Track IDs Start from 0, not 1
+    labels4 = np.array(labels4)
+    track_ids_4 = np.array(track_ids_4)
+    track_ids_4 -= 1
+
+    # Standard Augmentation
+    img4, labels4, track_ids = random_affine_with_ids(img4, labels4, track_ids_4)
+
+    return img4, labels4, track_ids
 
 
 def cutout(image, labels):

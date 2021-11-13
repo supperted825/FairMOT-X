@@ -36,9 +36,9 @@ def run(opt):
     print("Dataset Root: %s" % dataset_root)
 
     # Dataset
-    dataset = Dataset(train_path, batch_size=opt.batch_size, augment=True, opt=opt)
+    dataset = Dataset(train_path, batch_size=opt.batch_size, opt=opt)
     opt = opts().update_dataset_info_and_set_heads(opt, dataset)
-    opt.max_id_dict = dataset.max_id_dict
+    opt.nID_dict = dataset.nID_dict
     print("opt:\n", opt)
 
     logger = Logger(opt)

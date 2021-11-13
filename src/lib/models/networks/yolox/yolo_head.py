@@ -66,7 +66,6 @@ class YOLOXHead(nn.Module):
     def __init__(
         self,
         num_classes,
-        max_id_dict,
         width=1.0,
         strides=[8, 16, 32],
         in_channels=[256, 512, 1024],
@@ -184,12 +183,12 @@ class YOLOXHead(nn.Module):
         self.reid_loss = nn.CrossEntropyLoss()
 
         # ----- Define ReID Classifiers
-        assert max_id_dict is not None
-        self.max_id_dict = max_id_dict
+        assert opt.nID_dict is not None
+        self.nID_dict = opt.nID_dict
         self.emb_scale_dict = dict()
         self.id_classifiers = nn.ModuleDict()
 
-        for cls_id, nID in self.max_id_dict.items():
+        for cls_id, nID in self.nID_dict.items():
             self.id_classifiers[str(cls_id)] = nn.Linear(opt.reid_dim, nID)
         
 
@@ -504,7 +503,7 @@ class YOLOXHead(nn.Module):
             track_ids = multibatch_track_ids[multibatch_track_ids[:, 0] == batch_idx][:, 1]
             
             # Iterate through classes and calculate reID Loss
-            for cls_id in self.max_id_dict.keys():
+            for cls_id in self.nID_dict.keys():
                 
                 # --- Get Indices where Class IDs Match
                 inds = [i for i in range(gt_classes.shape[0]) if int(gt_classes[i]) == int(cls_id)]
