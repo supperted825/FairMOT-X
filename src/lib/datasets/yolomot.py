@@ -4,6 +4,7 @@ import os
 import json
 import random
 import shutil
+import copy
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -476,7 +477,6 @@ class YOLOMOT(Dataset):  # for training/testing
             
             # Now We Load Track IDs
             track_ids = self.labels[idx][:, 1]
-            track_ids -= 1  # track id starts from 1 (not 0)
         
         if self.augment:
             if not self.mosaic:
@@ -486,6 +486,9 @@ class YOLOMOT(Dataset):  # for training/testing
 
         # Number of Labels
         nL = len(labels)
+        
+        # Track ID starts from 1 (not 0)
+        track_ids -= 1  
 
         # ----- Further Augmentations
         if nL:
@@ -546,6 +549,31 @@ class YOLOMOT(Dataset):  # for training/testing
             l[:, 0] = i
             tid[:, 0] = i
         return torch.stack(img, 0), torch.cat(label, 0), torch.cat(track_ids, 0)
+    
+    def shuffle(self):
+        # Shuffle the dataset
+        tmp_img_files = copy.deepcopy(self.img_files)
+
+        ds_n_f = len(self.img_files)  # number of files of this sub-dataset
+        orig_img_files = self.img_files
+
+        # re-generate ids
+        used_ids = []
+        for i in range(ds_n_f):
+            new_idx = np.random.randint(0, ds_n_f)
+            if new_idx in used_ids:
+                continue
+
+            used_ids.append(new_idx)
+            tmp_img_files[i] = orig_img_files[new_idx]
+
+        self.img_files = tmp_img_files          # Reindex Image Files
+        
+        # Reindex Corresponding Label Files
+        self.label_files = [x.replace('images', 'labels_with_ids')
+                                    .replace('.png', '.txt')
+                                    .replace('.jpg', '.txt')
+                                for x in self.img_files]
 
 
 def load_image(self, index):
@@ -896,7 +924,6 @@ def load_mosaic_with_ids(self, index):
     # Track IDs Start from 0, not 1
     labels4 = np.array(labels4)
     track_ids_4 = np.array(track_ids_4)
-    track_ids_4 -= 1
 
     # Standard Augmentation
     img4, labels4, track_ids = random_affine_with_ids(img4, labels4, track_ids_4)

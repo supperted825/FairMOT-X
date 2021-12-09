@@ -506,7 +506,14 @@ class YOLOXHead(nn.Module):
             for cls_id in self.nID_dict.keys():
                 
                 # --- Get Indices where Class IDs Match
+                
                 inds = [i for i in range(gt_classes.shape[0]) if int(gt_classes[i]) == int(cls_id)]
+                
+                for i in track_ids[inds].long():
+                    if i < 0 or i > self.nID_dict[cls_id]:
+                        print(f"Out of Bounds ID Found for Class {cls_id}: {i}")
+    
+                inds = [i for i in range(gt_classes.shape[0]) if int(gt_classes[i]) == int(cls_id) and 0 <= track_ids[i] < self.nID_dict[cls_id]]
 
                 if len(inds) == 0:
                     continue
@@ -517,7 +524,8 @@ class YOLOXHead(nn.Module):
                 cls_id_pred = self.id_classifiers[str(cls_id)].forward(reid_head).contiguous()
                 
                 # --- Get reID Loss for This Image for This Class
-                reid_loss += self.reid_loss(cls_id_pred, track_ids[inds].long())   
+                reid_loss += self.reid_loss(cls_id_pred, track_ids[inds].long())
+
         
         # ---- Detection Losses
         cls_targets = torch.cat(cls_targets, 0)

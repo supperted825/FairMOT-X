@@ -3,6 +3,7 @@ from __future__ import division
 from __future__ import print_function
 
 import math
+import copy
 import time
 
 import torch
@@ -68,6 +69,8 @@ class YOLOTrainer(object):
         num_iters = len(data_loader) if opt.num_iters < 0 else opt.num_iters
         bar = Bar('{}/{}'.format(opt.task, opt.exp_id), max=num_iters)
         end = time.time()
+        
+        batch_actual = 32
 
         # ----- Iterate Through Batches
         for batch_i, (imgs, det_labels, track_ids) in enumerate(data_loader):
@@ -83,15 +86,21 @@ class YOLOTrainer(object):
             
             # Forward with Targets
             loss, loss_stats = model.forward(imgs, (det_labels, track_ids))
+            
+            # Divide the Loss for Gradient Accumulation
+            loss = loss / (batch_actual / opt.batch_size)
 
             # Backwards
             if phase == 'train':
-                self.optimizer.zero_grad()
                 loss.backward()
-                self.optimizer.step()
-
-            batch_time.update(time.time() - end)
-            end = time.time()
+                batch_time.update(time.time() - end)
+                end = time.time()
+                if (batch_i + 1) % 32 == 0 or batch_i + 1 == len(data_loader):
+                    self.optimizer.step()
+                    self.optimizer.zero_grad()
+                else:
+                    del imgs, det_labels, track_ids, loss, loss_stats
+                    continue
 
             Bar.suffix = '{phase}: [{0}][{1}/{2}]|Tot: {total:} |ETA: {eta:} '.format(
                 epoch, batch_i, num_iters, phase=phase, total=bar.elapsed_td, eta=bar.eta_td)
