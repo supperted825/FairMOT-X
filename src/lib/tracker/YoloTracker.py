@@ -10,6 +10,8 @@ from tracking_utils.kalman_filter import KalmanFilter
 from tracking_utils.utils import *
 from tracking_utils.log import logger
 
+from utils.utils import map_to_orig_coords
+
 from tracker.basetrack import BaseTrack, MCBaseTrack, TrackState
 from models.model import create_model, load_model
 from models.networks.yolox.utils.boxes import postprocess
@@ -377,7 +379,6 @@ class Track(BaseTrack):
 class YOLOTracker(object):
     def __init__(self, opt):
         self.opt = opt
-        max_id_dict = opt.max_id_dict
 
         # ----- Build Model for Detections & ReID Feature Map
         
@@ -386,12 +387,7 @@ class YOLOTracker(object):
         
         assert opt.load_model is not None, "No Model to Load for tracking!"
 
-        model, optimizer, start_epoch = load_model(model,
-                                                opt.load_model,
-                                                optimizer,
-                                                opt.resume,
-                                                opt.lr,
-                                                opt.lr_step)
+        self.model = load_model(model, opt.load_model)
 
         # ----- Set Model to Device & Evaluation Mode
         
@@ -408,7 +404,6 @@ class YOLOTracker(object):
 
         # ----- Tracking Hyperparameters
         
-        self.det_thresh = opt.conf_thres
         self.buffer_size = int(opt.track_buffer)
         self.max_time_lost = self.buffer_size
 
@@ -452,7 +447,7 @@ class YOLOTracker(object):
 
             # ----- Applies NMS and Returns bboxes
             pred = postprocess(pred, self.opt.num_classes,
-                               conf_thre=opt.conf_thre,
+                               conf_thre=opt.det_thre,
                                nms_thre=opt.nms_thre,
                                class_agnostic=True)
 
@@ -475,12 +470,14 @@ class YOLOTracker(object):
         :return:
         """
         
+        opt = self.opt
+        
         # Increment Frame ID
         self.frame_id += 1
 
         # ----- Reset Track IDs for First Frame
         if self.frame_id == 1:
-            MCTrack.init_count(self.opt.num_classes)
+            MCTrack.init_count(opt.num_classes)
 
         # ----- Get Image Sizes
         net_h, net_w = img.shape[2:]
@@ -501,7 +498,7 @@ class YOLOTracker(object):
 
             # ---- Applies NMS and Returns bboxes
             pred = postprocess(pred, self.opt.num_classes,
-                               conf_thre=opt.conf_thre,
+                               conf_thre=opt.det_thre,
                                nms_thre=opt.nms_thre,
                                class_agnostic=True)
 
@@ -511,7 +508,6 @@ class YOLOTracker(object):
 
             if dets is None:
                 print('[Warning]: No objects detected.')
-                return None
 
             # ----- Extract ReID Features for Each Detection
             
@@ -519,16 +515,16 @@ class YOLOTracker(object):
             id_vects_dict = defaultdict(list)
             
             for i, det in enumerate(dets):
-                
-                x1, y1, x2, y2, conf, cls_id = det
+                # Detections ordered as (x1, y1, x2, y2, obj_conf, class_conf, class_pred)
+                x1, y1, x2, y2, obj_conf, class_conf, cls_id = det
 
                 # L2 Normalize Feature Map
                 reid_map = F.normalize(reid_map, dim=1)
                 reid_dim, h_id_map, w_id_map = reid_map.shape
 
                 # Map Center Point from Net Image Scale to ReID Map Scale
-                center_x = (x1 + x2) * 0.5
-                center_y = (y1 + y2) * 0.5
+                center_x = x1 + x2 / 2
+                center_y = y1 + y2 / 2
                 center_x *= float(w_id_map) / float(w)
                 center_y *= float(h_id_map) / float(h)
 
@@ -546,8 +542,8 @@ class YOLOTracker(object):
                 id_feat_vect = id_feat_vect.cpu().numpy()
                 id_vects_dict[int(cls_id)].append(id_feat_vect)     # Add feat vect to dict(key: cls_id)
 
-            # ----- Map Detections to Original Input Image Coordinates
-            dets = map_to_orig_coords(dets, net_w, net_h, orig_w, orig_h)
+            # # ----- Map Detections to Original Input Image Coordinates
+            # dets = map_to_orig_coords(dets, net_w, net_h, orig_w, orig_h)
 
 
         # ----- Process Tracking for Each Object Class
@@ -562,6 +558,8 @@ class YOLOTracker(object):
 
             # ----- Instantiate Track for Each Detection, Feature Pair
             
+            
+            # tlwh, score, temp_feat, num_classes, cls_id, buff_size=30
             if len(cls_dets) > 0:
                 cls_detections = [
                                 MCTrack(
@@ -659,7 +657,7 @@ class YOLOTracker(object):
             
             for i_new in u_detection:
                 track = cls_detections[i_new]
-                if track.score < self.det_thresh:
+                if track.score < opt.det_thre:
                     continue
 
                 # Tracked But Not Activated

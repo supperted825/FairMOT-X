@@ -220,3 +220,55 @@ def encode_delta(gt_box_list, fg_anchor_list):
     dw = np.log(gw / pw)
     dh = np.log(gh / ph)
     return np.stack((dx, dy, dw, dh), axis=1)
+
+
+def map_to_orig_coords(dets, net_w, net_h, orig_w, orig_h):
+    """
+    :param dets: x1, y1, x2, y2, score, class: n×6
+    :param net_w:
+    :param net_h:
+    :param orig_w:
+    :param orig_h:
+    :return:
+    """
+    def get_padding():
+        """
+        :return:
+        """
+        ratio_x = float(net_w) / orig_w
+        ratio_y = float(net_h) / orig_h
+        ratio = min(ratio_x, ratio_y)
+
+        # new_w, new_h
+        new_shape = (round(orig_w * ratio), round(orig_h * ratio))
+        new_w, new_h = new_shape
+
+        pad_x = (net_w - new_w) * 0.5  # width padding
+        pad_y = (net_h - new_h) * 0.5  # height padding
+
+        left, right = round(pad_x - 0.1), round(pad_x + 0.1)
+        top, bottom = round(pad_y - 0.1), round(pad_y + 0.1)
+
+        return top, bottom, left, right, new_shape
+
+    # pad_tl, pad_rb, pad_type, new_shape = get_padding()
+    top, bottom, left, right, new_shape = get_padding()
+    new_w, new_h = new_shape
+
+    dets[:, 0] = (dets[:, 0] - left) / new_w * orig_w   # x1
+    dets[:, 2] = (dets[:, 2] - left) / new_w * orig_w   # x2
+    dets[:, 1] = (dets[:, 1] - top)  / new_h * orig_h   # y1
+    dets[:, 3] = (dets[:, 3] - top)  / new_h * orig_h   # y2
+
+    # clamp
+    clip_coords(dets[:, :4], (orig_h, orig_w))
+
+    return dets
+
+
+def clip_coords(boxes, img_shape):
+    # Clip bounding xyxy bounding boxes to image shape (height, width)
+    boxes[:, 0].clamp_(0, img_shape[1])  # x1
+    boxes[:, 1].clamp_(0, img_shape[0])  # y1
+    boxes[:, 2].clamp_(0, img_shape[1])  # x2
+    boxes[:, 3].clamp_(0, img_shape[0])  # y2

@@ -1,15 +1,6 @@
 import numpy as np
 import cv2
-from lib.tracker.multitracker import id2cls
-
-# cls_color_dict = {
-#     'car': [180, 105, 255],  # hot pink
-#     'bicycle': [219, 112, 147],  # MediumPurple
-#     'person': [98, 130, 238],  # Salmon
-#     'cyclist': [181, 228, 255],
-#     'tricycle': [211, 85, 186]
-# }
-
+from lib.datasets.yolomot import id2cls
 
 def tlwhs_to_tlbrs(tlwhs):
     tlbrs = np.copy(tlwhs)

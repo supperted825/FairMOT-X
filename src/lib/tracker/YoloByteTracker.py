@@ -475,7 +475,7 @@ class YOLOBYTETracker(object):
             dets = dets.cpu().numpy()
             scores = dets[:, 4] * dets[:, 5]
             bboxes = dets[:, [0, 1, 2, 3, 4, 6]]
-            bboxes[; , 4] = scores
+            bboxes[: , 4] = scores
             
             remain_inds = scores > self.track_thresh
             inds_lower  = scores > 0.1
