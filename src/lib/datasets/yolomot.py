@@ -313,7 +313,6 @@ class YOLOMOT(Dataset):  # for training/testing
                  path,
                  img_size=(576, 1024),
                  num_classes=8,
-                 batch_size=16,
                  single_cls=False,
                  opt=None):
         """
@@ -345,14 +344,11 @@ class YOLOMOT(Dataset):  # for training/testing
 
         # ----- Calculate Dataset Parameters
         n = len(self.img_files)
-        bi = np.floor(np.arange(n) / batch_size).astype(np.int)  # batch index
-        nb = bi[-1] + 1  # number of batches
 
         self.n = n
-        self.batch = bi  # batch index of each image
         self.default_input_wh = img_size
         self.num_classes = num_classes
-        self.augment = True # opt.augment
+        self.augment = opt.augment
         self.mosaic = opt.mosaic
         self.max_objs = opt.K
         self.img_size = img_size
@@ -451,7 +447,6 @@ class YOLOMOT(Dataset):  # for training/testing
 
 
     def __getitem__(self, idx):
-        self.augment = True
         
         if self.mosaic:
             img, labels, track_ids = load_mosaic_with_ids(self, idx)
@@ -467,7 +462,7 @@ class YOLOMOT(Dataset):  # for training/testing
             labels = []
             x = self.labels[idx][:, [0, 2, 3, 4, 5]]  # Skip Loading Track IDs
             if x.size > 0:
-                # Normalized xywh to pixel xyxy format:
+                # 1ed xywh to pixel xyxy format:
                 # For compatibility with random_affine function
                 labels = x.copy()
                 labels[:, 1] = resize_ratio * w * (x[:, 1] - x[:, 3] / 2)      # x1 = ct - w / 2
@@ -523,7 +518,7 @@ class YOLOMOT(Dataset):  # for training/testing
         track_ids_out  = np.zeros((nL, 2))
 
         if nL:
-            # Scale Normalised to Pixel BBOX for Detection
+            # Scale Normalised to Pixel XYWH for Detection
             det_labels_out[:, 1] = labels[:, 0]
             det_labels_out[:, [2, 4]] = labels[:, [1, 3]] * self.img_size[1]
             det_labels_out[:, [3, 5]] = labels[:, [2, 4]] * self.img_size[0]
