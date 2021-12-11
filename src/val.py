@@ -30,20 +30,15 @@ def run(opt):
 
     with open(opt.data_cfg) as f:  # choose which dataset to train '../src/lib/cfg/mot15.json',
         data_config = json.load(f)
-        valset_paths = data_config['test']  # 训练集路径
-        dataset_root = data_config['root']  # 数据集所在目录
+        val_path = list(data_config['test'].values())[0]
 
     # Image data transformations
     transforms = T.Compose([T.ToTensor()])
 
     # Dataset
-    dataset = Dataset(opt=opt,
-                      root=dataset_root,
-                      paths=trainset_paths,
-                      img_size=opt.input_wh,
-                      augment=False,
-                      transforms=transforms)
+    dataset = Dataset(val_path, opt=opt)
     opt = opts().update_dataset_info_and_set_heads(opt, dataset)
+    opt.nID_dict = dataset.nID_dict
 
     logger = Logger(opt)
 
@@ -54,16 +49,16 @@ def run(opt):
 
         print('Setting up validation data...')
 
-        dataset = Dataset(opt, dataset_root, valset_paths, (1088, 608), augment=False, transforms=None)
+        dataset = Dataset(val_path, opt=opt)
         opt = opts().update_dataset_info_and_set_heads(opt, dataset)
 
         val_loader = torch.utils.data.DataLoader(
             dataset,
             batch_size=opt.batch_size,
             shuffle=False,
-            num_workers=opt.num_workers,
             pin_memory=True,
-            drop_last=False
+            drop_last=True,
+            collate_fn=dataset.collate_fn
         )
         
         print('Creating model for Epoch {}...'.format(epoch))
@@ -72,7 +67,7 @@ def run(opt):
         if not os.path.exists(pthpath):
             continue
 
-        model = create_model(opt.arch, opt.heads, opt.head_conv, opt=opt)
+        model = create_model(opt.arch, opt=opt)
         optimizer = torch.optim.Adam(model.parameters(), opt.lr)
         model, optimizer, start_epoch = load_model(model, pthpath, optimizer, opt.resume, opt.lr, opt.lr_step)
         
