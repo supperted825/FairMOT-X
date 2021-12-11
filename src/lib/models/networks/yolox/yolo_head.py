@@ -66,6 +66,7 @@ class YOLOXHead(nn.Module):
     def __init__(
         self,
         num_classes,
+        training=True,
         width=1.0,
         strides=[8, 16, 32],
         in_channels=[256, 512, 1024],
@@ -183,14 +184,17 @@ class YOLOXHead(nn.Module):
         self.reid_loss = nn.CrossEntropyLoss()
 
         # ----- Define ReID Classifiers
-        assert opt.nID_dict is not None
-        self.nID_dict = opt.nID_dict
-        self.emb_scale_dict = dict()
-        self.id_classifiers = nn.ModuleDict()
+        if self.training:
+            assert opt.nID_dict is not None
+            self.nID_dict = opt.nID_dict
+            self.emb_scale_dict = dict()
+            self.id_classifiers = nn.ModuleDict()
+    
+            for cls_id, nID in self.nID_dict.items():
+                self.id_classifiers[str(cls_id)] = nn.Linear(opt.reid_dim, nID)
+                
+        self.initialize_biases(1e-2)
 
-        for cls_id, nID in self.nID_dict.items():
-            self.id_classifiers[str(cls_id)] = nn.Linear(opt.reid_dim, nID)
-        
 
     def initialize_biases(self, prior_prob):
         for conv in self.cls_preds:
@@ -480,10 +484,10 @@ class YOLOXHead(nn.Module):
             img_features = reid_features[batch_idx]       # Ch x H x W
             id_map_w, id_map_h = img_features.shape[2], img_features.shape[1]
             
-            # Extract Center Coordinates of GT bboxes - center_xs, center_ys are arrays
+            # Extract Center Coordinates of GT bboxes and Scale - center_xs, center_ys are arrays
             ny, nx = imgs[batch_idx].shape[1], imgs[batch_idx].shape[2]
-            center_xs = gt_bboxes_per_image[:,0]
-            center_ys = gt_bboxes_per_image[:,1]
+            center_xs = gt_bboxes_per_image[:,0] * id_map_w / nx
+            center_ys = gt_bboxes_per_image[:,1] * id_map_h / ny
 
             # Convert Center Coordinates to Int64
             center_xs += 0.5
