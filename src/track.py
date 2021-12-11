@@ -9,6 +9,7 @@ import os
 import os.path as osp
 import shutil
 import cv2
+import json
 import logging
 import argparse
 import motmetrics as mm
@@ -16,7 +17,7 @@ import numpy as np
 import torch
 
 from collections import defaultdict
-from lib.tracker.multitracker import JDETracker, MCJDETracker, id2cls
+from lib.tracker.multitracker import JDETracker, MCJDETracker
 from lib.tracker.YoloTracker import YOLOTracker
 from lib.tracker.YoloByteTracker import YOLOBYTETracker
 
@@ -79,7 +80,6 @@ def write_bdd_results(filename, results):
                 x1, y1, w, h = tlwh
                 x2, y2 = x1 + w, y1 + h
                 l_dict['box2d'] = {'x1': x1, 'x2': x2, 'y1': y1, 'y2': y2}
-                print(l_dict)
                 json_results[frame-1]["labels"].append(l_dict)
 
     with open(filename + ".json", 'w') as f:
@@ -261,7 +261,7 @@ def eval_seq(opt,
 
     # tracker = JDETracker(opt, frame_rate)
     # tracker = YOLOBYTETracker(opt, frame_rate)
-    tracker = YOLOTracker(opt, frame_rate)
+    tracker = YOLOTracker(opt)
 
     timer = Timer()
 
@@ -269,8 +269,7 @@ def eval_seq(opt,
 
     frame_id = 0  # frame index
     for path, img, img0 in data_loader:
-        if frame_id % 30 == 0 and frame_id != 0:
-            logger.info('Processing frame {} ({:.2f} fps)'.format(frame_id, 1.0 / max(1e-5, timer.average_time)))
+        logger.info('Processing frame {} ({:.2f} fps)'.format(frame_id, 1.0 / max(1e-5, timer.average_time)))
 
         # --- run tracking
         blob = torch.from_numpy(img).unsqueeze(0).to(opt.device)
@@ -484,7 +483,8 @@ if __name__ == '__main__':
                       MOT20-08
                       '''
         data_root = os.path.join(opt.data_dir, 'MOT20/images/test')
-    seqs = [seq.strip() for seq in seqs_str.split()]
+    
+    # seqs = [seq.strip() for seq in seqs_str.split()]
     
     val_data = "/hpctmp/e0425991/datasets/bdd100k/bdd100k/images/track/val/"
     seqs = os.listdir(opt.data_dir)
@@ -492,7 +492,7 @@ if __name__ == '__main__':
     main(opt,
          data_root=data_root,
          seqs=seqs,
-         exp_name='MOT15_val_all_dla34',
+         exp_name=opt.exp_id,
          show_image=False,
          save_images=False,
          save_videos=False)

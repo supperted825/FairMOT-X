@@ -166,18 +166,19 @@ class opts(object):
             '--val_mot20', default=False, help='val mot20')
         self.parser.add_argument(
             '--test_mot20', default=False, help='test mot20')
-        self.parser.add_argument(
-            '--conf_thres',
-            type=float,
-            default=0.4,  # 0.6, 0.4
-            help='confidence thresh for tracking')  # heat-map置信度阈值
-        self.parser.add_argument('--det_thres',
+            
+        # confidence
+        self.parser.add_argument('--conf_thre',
+                                type=float,
+                                default=0.4,  # 0.6, 0.4
+                                help='confidence thresh for tracking')
+        self.parser.add_argument('--det_thre',
                                  type=float,
-                                 default=0.3,
+                                 default=0.01,
                                  help='confidence thresh for detection')
-        self.parser.add_argument('--nms_thres',
+        self.parser.add_argument('--nms_thre',
                                  type=float,
-                                 default=0.4,
+                                 default=0.02,
                                  help='iou thresh for nms')
         self.parser.add_argument('--track_buffer',
                                  type=int,
@@ -337,6 +338,9 @@ class opts(object):
         if opt.resume and opt.load_model == '':
             model_path = opt.save_dir
             opt.load_model = os.path.join(model_path, 'model_last.pth')
+            if not os.path.exists(opt.load_model):
+                print("Although --resume was specified, there is no model to load. Training from Epoch 1.")
+                opt.load_model = ''
         return opt
 
     def update_dataset_info_and_set_heads(self, opt, dataset):
@@ -354,5 +358,23 @@ class opts(object):
                 return
 
         print("Heads are Predefined in YOLOX!")
+
+        return opt
+        
+    def init(self, args=''):
+        opt = self.parse(args)
+
+        default_dataset_info = {
+            'mot': {'default_input_wh': [1024, 576],
+                    'num_classes': len(opt.reid_cls_ids.split(','))
+                    }
+        }
+
+        class Struct:
+            def __init__(self, entries):
+                for k, v in entries.items():
+                    self.__setattr__(k, v)
+        dataset = Struct(default_dataset_info[opt.task])
+        opt = self.update_dataset_info_and_set_heads(opt, dataset)
 
         return opt
