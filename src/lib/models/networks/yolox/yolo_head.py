@@ -184,14 +184,13 @@ class YOLOXHead(nn.Module):
         self.reid_loss = nn.CrossEntropyLoss()
 
         # ----- Define ReID Classifiers
-        if self.training:
-            assert opt.nID_dict is not None
-            self.nID_dict = opt.nID_dict
-            self.emb_scale_dict = dict()
-            self.id_classifiers = nn.ModuleDict()
-    
-            for cls_id, nID in self.nID_dict.items():
-                self.id_classifiers[str(cls_id)] = nn.Linear(opt.reid_dim, nID)
+        assert opt.nID_dict is not None
+        self.nID_dict = opt.nID_dict
+        self.emb_scale_dict = dict()
+        self.id_classifiers = nn.ModuleDict()
+
+        for cls_id, nID in self.nID_dict.items():
+            self.id_classifiers[str(cls_id)] = nn.Linear(opt.reid_dim, nID)
                 
         self.initialize_biases(1e-2)
 

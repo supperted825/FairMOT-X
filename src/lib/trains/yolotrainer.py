@@ -55,11 +55,10 @@ class YOLOTrainer(object):
         if phase == 'train':
             model.train()  # train phase
         else:
-            if len(self.opt.gpus) > 1:
-                model = self.model.module
-
-            model.eval()  # test phase
-            torch.cuda.empty_cache()
+            pass
+            # if len(self.opt.gpus) > 1:
+            #     model = self.model.module
+            # torch.cuda.empty_cache()
 
         # ----- For Train Logging
         opt = self.opt
@@ -101,6 +100,10 @@ class YOLOTrainer(object):
                 else:
                     del imgs, det_labels, track_ids, loss, loss_stats
                     continue
+
+            else:
+                batch_time.update(time.time() - end)
+                end = time.time()
 
             Bar.suffix = '{phase}: [{0}][{1}/{2}]|Tot: {total:} |ETA: {eta:} '.format(
                 epoch, batch_i, num_iters, phase=phase, total=bar.elapsed_td, eta=bar.eta_td)
