@@ -7,7 +7,7 @@ from .dataset.bdd100k import BDD100K
 from .yolomot import YOLOMOT
 
 
-def get_dataset(task, mult_scale):
+def get_dataset(task, mult_scale=False):
     if task == 'mot':
         if mult_scale:
             return MultiScaleJD

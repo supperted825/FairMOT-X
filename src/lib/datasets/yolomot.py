@@ -17,7 +17,7 @@ from PIL import Image, ExifTags
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
-from utils.utils import xyxy2xywh, xywh2xyxy, ltwh2xywh
+from lib.utils.utils import xyxy2xywh, xywh2xyxy, ltwh2xywh
 
 cls2id = {
     'pedestrian': 0,
@@ -65,106 +65,75 @@ def exif_size(img):
     return s
 
 
-class LoadImages:  # for inference
-    def __init__(self, path, net_w=416, net_h=416):
+class LoadImages:
+    def __init__(self, path, img_size=(1024, 576)):
         """
         :param path:
-        :param net_w:
-        :param net_h:
+        :param img_size:
         """
-        if type(path) == list:
+        self.frame_rate = 10  # no actual meaning here
+
+        if type(path) == str:
+            if os.path.isdir(path):
+                image_format = ['.jpg', '.jpeg', '.png', '.tif']
+                self.files = sorted(glob.glob('%s/*.*' % path))
+                self.files = list(filter(lambda x: os.path.splitext(x)[
+                                                       1].lower() in image_format, self.files))
+            elif os.path.isfile(path):
+                self.files = [path]
+        elif type(path) == list:
             self.files = path
 
-            nI, nV = len(self.files), 0
-            self.nF = nI + nV  # number of files
-            self.video_flag = [False] * nI + [True] * nV
+        self.nF = len(self.files)  # number of image files
+        self.width = img_size[0]
+        self.height = img_size[1]
+        self.count = 0
 
-            # net input height width
-            self.net_w = net_w
-            self.net_h = net_h
-
-            self.mode = 'images'
-            self.cap = None
-        else:
-            path = str(Path(path))  # os-agnostic
-            files = []
-            if os.path.isdir(path):
-                files = sorted(glob.glob(os.path.join(path, '*.*')))
-            elif os.path.isfile(path):
-                files = [path]
-            else:
-                print('[Err]: invalid file list path.')
-                exit(-1)
-
-            images = [x for x in files if os.path.splitext(x)[-1].lower() in img_formats]
-            videos = [x for x in files if os.path.splitext(x)[-1].lower() in vid_formats]
-            nI, nV = len(images), len(videos)
-
-            self.net_w = net_w
-            self.net_h = net_h
-
-            self.files = images + videos
-            self.nF = nI + nV  # number of files
-            self.video_flag = [False] * nI + [True] * nV
-            self.mode = 'images'
-            if any(videos):
-                self.new_video(videos[0])  # new video
-            else:
-                self.cap = None
-
-        assert self.nF > 0, 'No images or videos found in ' + path
+        assert self.nF > 0, 'No images found in ' + path
 
     def __iter__(self):
-        self.count = 0
+        self.count = -1
         return self
 
     def __next__(self):
+        self.count += 1
+
         if self.count == self.nF:
             raise StopIteration
-        path = self.files[self.count]
 
-        if self.video_flag[self.count]:
-            # Read video
-            self.mode = 'video'
-            ret_val, img0 = self.cap.read()
-            if not ret_val:
-                self.count += 1
-                self.cap.release()
-                if self.count == self.nF:  # last video
-                    raise StopIteration
-                else:
-                    path = self.files[self.count]
-                    self.new_video(path)
-                    ret_val, img0 = self.cap.read()
+        img_path = self.files[self.count]
 
-            if self.frame % 30 == 0:
-                # print('video %g/%g (%g/%g) %s: ' % (self.count + 1, self.nF, self.frame, self.nframes, path))
-                print('video (%g/%g) %s: ' % (self.frame, self.nframes, path))
-            self.frame += 1
+        # Read image
+        img_0 = cv2.imread(img_path)  # BGR
+        assert img_0 is not None, 'Failed to load ' + img_path
 
-        else:
-            # Read image
-            self.count += 1
-            img0 = cv2.imread(path)  # HWC(BGR)
+        # Padded resize
+        img, _, _ = letterbox(img_0, (self.height, self.width))
 
-            assert img0 is not None, 'Image Not Found ' + path
-            print('image %g/%g %s: ' % (self.count, self.nF, path), end='')
-
-        # Pad and resize
-        # img = letterbox(img0, new_shape=self.img_size)[0]  # to make sure mod by 64
-        img = pad_resize_ratio(img0, self.net_w, self.net_h)
-
-        # Convert: BGR to RGB and HWC to CHW
+        # Normalize RGB
         img = img[:, :, ::-1].transpose(2, 0, 1)
-        img = np.ascontiguousarray(img)
+        img = np.ascontiguousarray(img, dtype=np.float32)
 
-        # cv2.imwrite(path + '.letterbox.jpg', 255 * img.transpose((1, 2, 0))[:, :, ::-1])  # save letterbox image
-        return path, img, img0, self.cap
+        # cv2.imwrite(img_path + '.letterbox.jpg', 255 * img.transpose((1, 2, 0))[:, :, ::-1])  # save letterbox image
+        return img_path, img, img_0
 
-    def new_video(self, path):
-        self.frame = 0
-        self.cap = cv2.VideoCapture(path)
-        self.nframes = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    def __getitem__(self, idx):
+        idx = idx % self.nF
+        img_path = self.files[idx]
+
+        # Read image
+        img_0 = cv2.imread(img_path)  # BGR
+        assert img_0 is not None, 'Failed to load ' + img_path
+
+        # Padded resize
+        img, _, _, _ = letterbox(img_0, height=self.height, width=self.width)
+
+        # Normalize RGB: BGR -> RGB and H×W×C -> C×H×W
+        img = img[:, :, ::-1].transpose(2, 0, 1)
+        img = np.ascontiguousarray(img, dtype=np.float32)
+        img /= 255.0
+
+        return img_path, img, img_0
 
     def __len__(self):
         return self.nF  # number of files
@@ -462,7 +431,7 @@ class YOLOMOT(Dataset):  # for training/testing
             labels = []
             x = self.labels[idx][:, [0, 2, 3, 4, 5]]  # Skip Loading Track IDs
             if x.size > 0:
-                # 1ed xywh to pixel xyxy format:
+                # Normaliseded xywh to pixel xyxy format:
                 # For compatibility with random_affine function
                 labels = x.copy()
                 labels[:, 1] = resize_ratio * w * (x[:, 1] - x[:, 3] / 2)      # x1 = ct - w / 2

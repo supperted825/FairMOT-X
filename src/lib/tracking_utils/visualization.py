@@ -86,6 +86,7 @@ def plot_detects(image,
 
 
 def plot_tracks(image,
+                bbox_dim,
                 tlwhs_dict,
                 obj_ids_dict,
                 num_classes,
@@ -105,12 +106,10 @@ def plot_tracks(image,
     """
     img = np.ascontiguousarray(np.copy(image))
     im_h, im_w = img.shape[:2]
-
-    # top_view = np.zeros([im_w, im_w, 3], dtype=np.uint8) + 255
+    bbox_h, bbox_w = bbox_dim
 
     text_scale = max(1.0, image.shape[1] / 1200.)  # 1600.
-    # text_thickness = 1 if text_scale > 1.1 else 1
-    text_thickness = 2  # 自定义ID文本线宽
+    text_thickness = 2
     line_thickness = max(1, int(image.shape[1] / 500.))
 
     radius = max(5, int(im_w / 140.))
@@ -129,7 +128,11 @@ def plot_tracks(image,
 
         for i, tlwh_i in enumerate(cls_tlwhs):
             x1, y1, w, h = tlwh_i
-            int_box = tuple(map(int, (x1, y1, x1 + w, y1 + h)))  # x1, y1, x2, y2
+            x1 *= im_w / bbox_w
+            w  *= im_w / bbox_w
+            y1 *= im_h / bbox_h
+            h  *= im_h / bbox_h
+            int_box = tuple(map(int, (x1, y1, x1 + w, y1 + h)))  # x1, y1, x2, y2         
             obj_id = int(obj_ids[i])
             id_text = '{}'.format(int(obj_id))
 

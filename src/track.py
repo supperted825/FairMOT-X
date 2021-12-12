@@ -27,7 +27,7 @@ from lib.tracking_utils.timer import Timer
 from lib.tracking_utils.evaluation import Evaluator
 from lib.tracking_utils.utils import mkdir_if_missing
 
-import lib.datasets.dataset.jde as datasets
+import lib.datasets.yolomot as datasets
 
 from lib.opts import opts
 
@@ -269,7 +269,8 @@ def eval_seq(opt,
 
     frame_id = 0  # frame index
     for path, img, img0 in data_loader:
-        logger.info('Processing frame {} ({:.2f} fps)'.format(frame_id, 1.0 / max(1e-5, timer.average_time)))
+        if frame_id % 30 == 0 and frame_id != 0:
+            logger.info('Processing frame {} ({:.2f} fps)'.format(frame_id, 1.0 / max(1e-5, timer.average_time)))
 
         # --- run tracking
         blob = torch.from_numpy(img).unsqueeze(0).to(opt.device)
@@ -309,6 +310,7 @@ def eval_seq(opt,
             if show_image or save_dir is not None:
                 if frame_id > 0:
                     online_im: ndarray = vis.plot_tracks(image=img0,
+                                                         bbox_dim=(576, 1024),
                                                          tlwhs_dict=online_tlwhs_dict,
                                                          obj_ids_dict=online_ids_dict,
                                                          num_classes=opt.num_classes,

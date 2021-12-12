@@ -6,19 +6,22 @@ import logging
 import os
 
 os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
-import torch
 
+import torch
 import cv2
 import shutil
 import numpy as np
+import json
 import os.path as osp
 import torch.nn.functional as F
 from collections import defaultdict
+
 from lib.opts import opts  # import opts
 from lib.tracking_utils.utils import mkdir_if_missing
 from lib.tracking_utils.log import logger
-import lib.datasets.dataset.bdd100k as datasets
+import lib.datasets.yolomot as datasets
 from track import eval_seq, eval_imgs_output_dets
+from lib.datasets.dataset_factory import get_dataset
 from lib.datasets.dataset.jde import letterbox
 from lib.models.model import create_model, load_model
 from lib.models.decode import mot_decode
@@ -189,8 +192,19 @@ def test_single(img_path, dev):
 
 
 if __name__ == '__main__':
-    opt = opts().init()
-    opt.training = False
+    opt = opts().parse()
+    
+    Dataset = get_dataset(opt.task)  # if opt.task==mot -> JointDataset
+
+    with open(opt.data_cfg) as f:  # choose which dataset to train '../src/lib/cfg/mot15.json',
+        data_config = json.load(f)
+        train_path = list(data_config['train'].values())[0]
+        dataset_root = data_config['root']
+
+    # Dataset
+    dataset = Dataset(train_path, opt=opt)
+    opt = opts().update_dataset_info_and_set_heads(opt, dataset)
+    opt.nID_dict = dataset.nID_dict
     run_demo(opt)
 
     # test_single(img_path='/mnt/diskb/even/MCMOT/src/00000.jpg', dev=torch.device('cpu'))
