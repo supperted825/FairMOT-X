@@ -19,7 +19,7 @@ class YOLOXMOT(nn.Module):
     def __init__(self, backbone=None, head=None, opt=None):
         super().__init__()
 
-        self.backbone = YOLOPAFPN()
+        self.backbone = YOLOPAFPN(opt.yolo_depth, opt.yolo_width)
         self.head = YOLOXHead(opt.num_classes, opt=opt)
 
     def forward(self, x, targets=None):

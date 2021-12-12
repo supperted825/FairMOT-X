@@ -63,9 +63,14 @@ class opts(object):
                                  help='model architecture. Currently tested'
                                       'resdcn_18 |resdcn_34 | resdcn_50 | resfpndcn_34 |'
                                       'dla_34 | hrnet_32 | hrnet_18 | cspdarknet_53 | regnet | effdet')
-        self.parser.add_argument('--regnet_config',
-                                 default='regnety400',
-                                 help='regnet configuration to load')
+        self.parser.add_argument('--yolo_depth',
+                                 default=1.0,
+                                 type=float,
+                                 help='YOLO-X depth scaling for S, M, L, X, etc.')
+        self.parser.add_argument('--yolo_width',
+                                 default=1.0,
+                                 type=float,
+                                 help='YOLO-X width scaling for S, M, L, X, etc.')
         self.parser.add_argument('--head_conv',
                                  type=int,
                                  default=-1,
@@ -170,7 +175,7 @@ class opts(object):
         # confidence
         self.parser.add_argument('--conf_thre',
                                 type=float,
-                                default=0.4,  # 0.6, 0.4
+                                default=0.1,  # 0.6, 0.4
                                 help='confidence thresh for tracking')
         self.parser.add_argument('--det_thre',
                                  type=float,
@@ -306,7 +311,7 @@ class opts(object):
         opt.lr_step = [int(i) for i in opt.lr_step.split(',')]
 
         opt.fix_res = not opt.keep_res
-        print('Fix size testing.' if opt.fix_res else 'Keep resolution testing.')
+        # print('Fix size testing.' if opt.fix_res else 'Keep resolution testing.')
 
         opt.reg_offset = not opt.not_reg_offset
 
