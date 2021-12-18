@@ -191,6 +191,9 @@ class YOLOXHead(nn.Module):
 
         for cls_id, nID in self.nID_dict.items():
             self.id_classifiers[str(cls_id)] = nn.Linear(opt.reid_dim, nID)
+            
+        self.s_det = nn.Parameter(-1.85 * torch.ones(1))
+        self.s_id  = nn.Parameter(-1.05 * torch.ones(1))
                 
         self.initialize_biases(1e-2)
 
@@ -554,9 +557,11 @@ class YOLOXHead(nn.Module):
         
         # ----- Combine Losses
         reg_weight = 5.0
-        det_loss = reg_weight * loss_iou + loss_obj + loss_cls + loss_l1 + reid_loss
+        det_loss = reg_weight * loss_iou + loss_obj + loss_cls + loss_l1
         
-        loss = det_loss + reid_loss
+        loss = torch.exp(-self.s_det) * det_loss \
+                + torch.exp(-self.s_id) * reid_loss \
+                + (self.s_det + self.s_id)
 
         return (
             loss, 
