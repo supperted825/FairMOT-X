@@ -175,15 +175,15 @@ class opts(object):
         # confidence
         self.parser.add_argument('--conf_thre',
                                 type=float,
-                                default=0.1,  # 0.6, 0.4
+                                default=0.4,  # 0.6, 0.4
                                 help='confidence thresh for tracking')
         self.parser.add_argument('--det_thre',
                                  type=float,
-                                 default=0.01,
+                                 default=0.5,
                                  help='confidence thresh for detection')
         self.parser.add_argument('--nms_thre',
                                  type=float,
-                                 default=0.02,
+                                 default=0.45,
                                  help='iou thresh for nms')
         self.parser.add_argument('--track_buffer',
                                  type=int,
