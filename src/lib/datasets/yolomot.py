@@ -1,4 +1,5 @@
 import glob
+from io import DEFAULT_BUFFER_SIZE
 import math
 import os
 import json
@@ -516,22 +517,7 @@ class YOLOMOT(Dataset):  # for training/testing
     
     def shuffle(self):
         # Shuffle the dataset
-        tmp_img_files = copy.deepcopy(self.img_files)
-
-        ds_n_f = len(self.img_files)  # number of files of this sub-dataset
-        orig_img_files = self.img_files
-
-        # re-generate ids
-        used_ids = []
-        for i in range(ds_n_f):
-            new_idx = np.random.randint(0, ds_n_f)
-            if new_idx in used_ids:
-                continue
-
-            used_ids.append(new_idx)
-            tmp_img_files[i] = orig_img_files[new_idx]
-
-        self.img_files = tmp_img_files          # Reindex Image Files
+        np.random.shuffle(self.img_files)
         
         # Reindex Corresponding Label Files
         self.label_files = [x.replace('images', 'labels_with_ids')
