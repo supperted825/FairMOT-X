@@ -101,7 +101,7 @@ class opts(object):
         # train
         self.parser.add_argument('--lr',
                                  type=float,
-                                 default=7e-5,  # 1e-4, 7e-5, 5e-5, 3e-5
+                                 default=7e-4,  # 1e-4, 7e-5, 5e-5, 3e-5
                                  help='learning rate for batch size 32.')
         self.parser.add_argument('--lr_step',
                                  type=str,
@@ -179,7 +179,7 @@ class opts(object):
                                 help='confidence thresh for tracking')
         self.parser.add_argument('--det_thre',
                                  type=float,
-                                 default=0.5,
+                                 default=0.3,
                                  help='confidence thresh for detection')
         self.parser.add_argument('--nms_thre',
                                  type=float,
@@ -220,10 +220,10 @@ class opts(object):
                                  default='/hpctmp/e0425991/datasets/bdd100k/bdd100k/MOT')
 
         # loss
-        self.parser.add_argument('--mse_loss',  # default: false
-                                 action='store_true',
-                                 help='use mse loss or focal loss to train '
-                                      'keypoint heatmaps.')
+        self.parser.add_argument('--uncertainty_loss', dest='uncertainty_loss', action='store_true')
+        self.parser.add_argument('--no_uncertainty_loss', dest='uncertainty_loss', action='store_false')
+        self.parser.set_defaults(uncertainty_loss=True)
+        
         self.parser.add_argument('--reg_loss',
                                  default='l1',
                                  help='regression loss: sl1 | l1 | l2')  # sl1: smooth L1 loss
@@ -311,7 +311,6 @@ class opts(object):
         opt.lr_step = [int(i) for i in opt.lr_step.split(',')]
 
         opt.fix_res = not opt.keep_res
-        # print('Fix size testing.' if opt.fix_res else 'Keep resolution testing.')
 
         opt.reg_offset = not opt.not_reg_offset
 
@@ -325,6 +324,7 @@ class opts(object):
 
         if opt.master_batch_size == -1:
             opt.master_batch_size = opt.batch_size // len(opt.gpus)
+        
         rest_batch_size = (opt.batch_size - opt.master_batch_size)
         opt.chunk_sizes = [opt.master_batch_size]
         for i in range(len(opt.gpus) - 1):
