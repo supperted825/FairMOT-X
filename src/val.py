@@ -39,6 +39,8 @@ def run(opt):
     dataset = Dataset(val_path, opt=opt)
     opt = opts().update_dataset_info_and_set_heads(opt, dataset)
     opt.nID_dict = dataset.nID_dict
+    
+    opt.load_model = os.path.join("/hpctmp/e0425991/modelrepo/FairMOT-X/", opt.exp_id)
 
     logger = Logger(opt)
 

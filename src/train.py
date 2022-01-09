@@ -92,22 +92,25 @@ def run(opt):
             if 'time' not in k:
                 logger.write(' | ')
 
+        if not os.path.isdir(f'/hpctmp/e0425991/modelrepo/FairMOT-X/{opt.exp_id}/'):
+            os.mkdir(f'/hpctmp/e0425991/modelrepo/FairMOT-X/{opt.exp_id}/')
+            
         save_model(os.path.join(f'/hpctmp/e0425991/modelrepo/FairMOT-X/{opt.exp_id}/', f'model_{epoch}.pth'), epoch, model, optimizer)
         save_model(os.path.join(opt.save_dir, 'model_last.pth'), epoch, model, optimizer)
 
         logger.write('\n')
 
         if epoch in opt.lr_step:
-
-            lr = opt.lr * (0.1 ** (opt.lr_step.index(epoch) + 1))
-            print('Drop LR to', lr)
+            
+            if opt.exp_id == "yolo-l5":
+                lr = opt.lr * (0.1 ** (opt.lr_step.index(epoch) + 4))
+            else:
+                lr = opt.lr * (0.1 ** (opt.lr_step.index(epoch) + 1))
+            print('Drop LR to', lr, flush=True)
 
             for param_group in optimizer.param_groups:
                 param_group['lr'] = lr
 
-        if epoch % 10 == 0:
-            save_model(os.path.join(opt.save_dir, 'model_{}.pth'.format(epoch)),
-                       epoch, model, optimizer)
     logger.close()
 
 
