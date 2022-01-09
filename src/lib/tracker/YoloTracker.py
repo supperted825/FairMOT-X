@@ -388,6 +388,11 @@ class YOLOTracker(object):
         assert opt.load_model is not None, "No Model to Load for tracking!"
 
         self.model = load_model(model, opt.load_model)
+        try:
+            print("Detection Loss Weight: ", self.model.head.s_det)
+            print("ID Loss Weight: ", self.model.head.s_id)
+        except:
+            print("Model does not use uncertainty loss.")
 
         # ----- Set Model to Device & Evaluation Mode
         
@@ -508,6 +513,7 @@ class YOLOTracker(object):
 
             if dets is None:
                 print('[Warning]: No objects detected.')
+                exit(-1)
 
             # ----- Extract ReID Features for Each Detection
             
