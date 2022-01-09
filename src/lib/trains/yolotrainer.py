@@ -70,6 +70,7 @@ class YOLOTrainer(object):
         end = time.time()
         
         batch_actual = 32
+        self.optimizer.zero_grad()
 
         # ----- Iterate Through Batches
         for batch_i, (imgs, det_labels, track_ids) in enumerate(data_loader):
@@ -87,23 +88,10 @@ class YOLOTrainer(object):
             loss, loss_stats = model.forward(imgs, (det_labels, track_ids))
             
             # Divide the Loss for Gradient Accumulation
-            loss = loss / (batch_actual / opt.batch_size)
-
-            # Backwards
-            if phase == 'train':
-                loss.backward()
-                batch_time.update(time.time() - end)
-                end = time.time()
-                if (batch_i + 1) % 32 == 0 or batch_i + 1 == len(data_loader):
-                    self.optimizer.step()
-                    self.optimizer.zero_grad()
-                else:
-                    del imgs, det_labels, track_ids, loss, loss_stats
-                    continue
-
-            else:
-                batch_time.update(time.time() - end)
-                end = time.time()
+            loss_actual = loss / (batch_actual / opt.batch_size)
+                
+            batch_time.update(time.time() - end)
+            end = time.time()
 
             Bar.suffix = '{phase}: [{0}][{1}/{2}]|Tot: {total:} |ETA: {eta:} '.format(
                 epoch, batch_i, num_iters, phase=phase, total=bar.elapsed_td, eta=bar.eta_td)
@@ -122,10 +110,16 @@ class YOLOTrainer(object):
             else:
                 bar.next()
 
-            del imgs, det_labels, track_ids, loss, loss_stats
+            if phase == 'train':
+                loss_actual.backward()
+                if (batch_i + 1) % (batch_actual / opt.batch_size) == 0 or batch_i + 1 == len(data_loader):
+                    self.optimizer.step()
+                    self.optimizer.zero_grad()
+
+            del imgs, det_labels, track_ids, loss, loss_actual, loss_stats
 
         # Shuffle Dataset Every Epoch
-        data_loader.dataset.shuffle()  # re-assign file id for each idx
+        # data_loader.dataset.shuffle()  # re-assign file id for each idx
 
         bar.finish()
         ret = {k: v.avg for k, v in avg_loss_stats.items()}
