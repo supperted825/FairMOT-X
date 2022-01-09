@@ -48,15 +48,18 @@ class FeatureFusor(nn.Module):
         self.p1_upsample = nn.Upsample(scale_factor=2, mode='nearest')
         
         # Downchannel Layers with DCN
-        self.p3_deform_conv = DeformConv(in_channels[2], in_channels[1])
-        self.p2_deform_conv = DeformConv(in_channels[1], in_channels[0])
-        self.p1_deform_conv = DeformConv(in_channels[0], reid_feat_dim)
+        self.p3_deform_conv_2 = DeformConv(in_channels[2], reid_feat_dim)
+        self.p2_deform_conv_1 = DeformConv(in_channels[1], reid_feat_dim)
+        self.p2_deform_conv_2 = DeformConv(reid_feat_dim , reid_feat_dim)
+        self.p1_deform_conv_1 = DeformConv(in_channels[0], reid_feat_dim)
+        self.p1_deform_conv_2 = DeformConv(reid_feat_dim , reid_feat_dim)
+        
 
     def forward(self, inputs):
         p1, p2, p3 = inputs
-        p2 = self.p3_upsample(self.p3_deform_conv(p3)) + p2
-        p1 = self.p2_upsample(self.p2_deform_conv(p2)) + p1
-        p0 = self.p1_deform_conv(p1)
+        p2 = self.p3_upsample(self.p3_deform_conv_2(p3)) + self.p2_deform_conv_1(p2)
+        p1 = self.p2_upsample(self.p2_deform_conv_2(p2)) + self.p1_deform_conv_1(p1)
+        p0 = self.p1_upsample(self.p1_deform_conv_2(p1))
         return p0
 
 
@@ -180,6 +183,7 @@ class YOLOXHead(nn.Module):
         self.grids = [torch.zeros(1)] * len(in_channels)
         
         # ----- For ReID Branch
+        self.uncertainty_loss = opt.uncertainty_loss
         self.feature_map = FeatureFusor(in_channels, opt.reid_dim)
         self.reid_loss = nn.CrossEntropyLoss()
 
@@ -192,8 +196,9 @@ class YOLOXHead(nn.Module):
         for cls_id, nID in self.nID_dict.items():
             self.id_classifiers[str(cls_id)] = nn.Linear(opt.reid_dim, nID)
             
-        self.s_det = nn.Parameter(-1.85 * torch.ones(1))
-        self.s_id  = nn.Parameter(-1.05 * torch.ones(1))
+        if self.uncertainty_loss:
+            self.s_det = nn.Parameter( 1.40 * torch.ones(1))
+            self.s_id  = nn.Parameter(-1.50 * torch.ones(1))
                 
         self.initialize_biases(1e-2)
 
@@ -484,7 +489,7 @@ class YOLOXHead(nn.Module):
             
             # ReID Feature Map for this Image
             img_features = reid_features[batch_idx]       # Ch x H x W
-            id_map_w, id_map_h = img_features.shape[2], img_features.shape[1]
+            _, id_map_h, id_map_w = img_features.shape
             
             # Extract Center Coordinates of GT bboxes and Scale - center_xs, center_ys are arrays
             ny, nx = imgs[batch_idx].shape[1], imgs[batch_idx].shape[2]
@@ -517,7 +522,7 @@ class YOLOXHead(nn.Module):
                 
                 for i in track_ids[inds].long():
                     if i < 0 or i > self.nID_dict[cls_id]:
-                        print(f"Out of Bounds ID Found for Class {cls_id}: {i}")
+                        print(f"Out of Bounds ID Found for Class {cls_id}: {i}", flush=True)
     
                 inds = [i for i in range(gt_classes.shape[0]) if int(gt_classes[i]) == int(cls_id) and 0 <= track_ids[i] < self.nID_dict[cls_id]]
 
@@ -559,9 +564,10 @@ class YOLOXHead(nn.Module):
         reg_weight = 5.0
         det_loss = reg_weight * loss_iou + loss_obj + loss_cls + loss_l1
         
-        loss = torch.exp(-self.s_det) * det_loss \
-                + torch.exp(-self.s_id) * reid_loss \
-                + (self.s_det + self.s_id)
+        if self.uncertainty_loss:
+            loss = torch.exp(-self.s_det) * det_loss + torch.exp(-self.s_id) * reid_loss + (self.s_det + self.s_id)
+        else:
+            loss = det_loss + 0.1 * reid_loss
 
         return (
             loss, 
