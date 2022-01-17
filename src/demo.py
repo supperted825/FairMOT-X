@@ -20,7 +20,7 @@ from lib.opts import opts  # import opts
 from lib.tracking_utils.utils import mkdir_if_missing
 from lib.tracking_utils.log import logger
 import lib.datasets.yolomot as datasets
-from track import eval_seq, eval_imgs_output_dets
+from track import eval_seq
 from lib.datasets.dataset_factory import get_dataset
 from lib.datasets.dataset.jde import letterbox
 from lib.models.model import create_model, load_model
