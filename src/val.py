@@ -47,7 +47,7 @@ def run(opt):
     os.environ['CUDA_VISIBLE_DEVICES'] = opt.gpus_str
     opt.device = torch.device('cuda:0' if opt.gpus[0] >= 0 else 'cpu')
 
-    for epoch in range(1, 60 + 1):
+    for epoch in range(opt.start_epoch, 60 + 1):
 
         print('Setting up validation data...')
 
