@@ -24,7 +24,7 @@ class YOLOTrainer(object):
         self.opt = opt
         self.optimizer = optimizer
         self.model = model
-        self.loss_stats = ['tot_loss', 'iou_loss', 'conf_loss', 'cls_loss', 'reid_loss']
+        self.loss_stats = ['tot_loss', 'iou_loss', 'l1_loss', 'conf_loss', 'cls_loss', 'reid_loss']
 
 
     def set_device(self, gpus, chunk_sizes, device):
@@ -116,10 +116,10 @@ class YOLOTrainer(object):
                     self.optimizer.step()
                     self.optimizer.zero_grad()
 
-            del imgs, det_labels, track_ids, loss, loss_actual, loss_stats
+            del imgs, det_labels, track_ids, loss, loss_stats, loss_actual
 
         # Shuffle Dataset Every Epoch
-        # data_loader.dataset.shuffle()  # re-assign file id for each idx
+        data_loader.dataset.shuffle()  # re-assign file id for each idx
 
         bar.finish()
         ret = {k: v.avg for k, v in avg_loss_stats.items()}
@@ -128,22 +128,7 @@ class YOLOTrainer(object):
         return ret, results
 
     def save_result(self, output, batch, results):
-        reg = output['reg'] if self.opt.reg_offset else None
-        dets = mot_decode(heatmap=output['hm'],
-                          wh=output['wh'],
-                          reg=reg,
-                          cat_spec_wh=self.opt.cat_spec_wh,
-                          K=self.opt.K)
-        dets = dets.detach().cpu().numpy().reshape(1, -1, dets.shape[2])
-
-        dets_out = ctdet_post_process(dets.copy(),
-                                      batch['meta']['c'].cpu().numpy(),  # center
-                                      batch['meta']['s'].cpu().numpy(),  # scale
-                                      output['hm'].shape[2],  # height
-                                      output['hm'].shape[3],  # width
-                                      output['hm'].shape[1])  # num_classes
-
-        results[batch['meta']['img_id'].cpu().numpy()[0]] = dets_out[0]
+        raise NotImplementedError
         
     def debug(self, batch, output, iter_id):
         raise NotImplementedError
