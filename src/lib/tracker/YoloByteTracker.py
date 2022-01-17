@@ -40,7 +40,7 @@ class MCTrack(MCBaseTrack):
         self.track_len = 0
 
         self.smooth_feat = None
-        if temp_feat:
+        if temp_feat is not None:
             self.update_features(temp_feat)
 
         # buffered features
@@ -378,19 +378,19 @@ class Track(BaseTrack):
 class YOLOBYTETracker(object):
     def __init__(self, opt):
         self.opt = opt
-        max_id_dict = opt.max_id_dict
 
         # ----- Build Model for Detections & ReID Feature Map
         print('Creating model...')
         model = create_model(opt.arch, opt=opt)
         
         assert opt.load_model is not None, "No Model to Load for tracking!"
-        model, optimizer, start_epoch = load_model(model,
-                                                opt.load_model,
-                                                optimizer,
-                                                opt.resume,
-                                                opt.lr,
-                                                opt.lr_step)
+        
+        self.model = load_model(model, opt.load_model)
+        try:
+            print("Detection Loss Weight: ", self.model.head.s_det)
+            print("ID Loss Weight: ", self.model.head.s_id)
+        except:
+            print("Model does not use uncertainty loss.")
 
         # ----- Set Model to Device & Evaluation Mode
         device = opt.device
@@ -403,8 +403,6 @@ class YOLOBYTETracker(object):
         self.frame_id = 0
 
         # ----- Tracking Hyperparameters
-        self.det_thresh = opt.conf_thresh
-        self.track_thresh = opt.conf_thres
         self.buffer_size = int(opt.track_buffer)
         self.max_time_lost = self.buffer_size
 
@@ -428,13 +426,15 @@ class YOLOBYTETracker(object):
         self.kalman_filter = KalmanFilter()
 
 
-    def update(self, img, img0):
+    def update_tracking(self, img, img0):
         """
         Update tracking result of the frame
         :param img:
         :param img0:
         :return:
         """
+        
+        opt = self.opt
         
         # Increment Frame ID
         self.frame_id += 1
@@ -471,21 +471,25 @@ class YOLOBYTETracker(object):
             dets = pred[0]
             reid_map = reid_map[0]
             
+            if dets is None:
+                print('[Warning]: No objects detected.')
+                return output_tracks_dict
+            
             # ----- Filter Indices for High Conf Detections, Low Conf Detections
             dets = dets.cpu().numpy()
             scores = dets[:, 4] * dets[:, 5]
             bboxes = dets[:, [0, 1, 2, 3, 4, 6]]
             bboxes[: , 4] = scores
             
-            remain_inds = scores > self.track_thresh
+            remain_inds = scores > opt.conf_thre
             inds_lower  = scores > 0.1
-            inds_higher = scores < self.track_thresh
-            inds_second = np.logical_and(inds_low, inds_high)
+            inds_higher = scores < opt.conf_thre
+            inds_second = np.logical_and(inds_lower, inds_higher)
             
-            dets = bboxes[remain_inds]
+            dets = torch.from_numpy(bboxes[remain_inds])
             scores_keep = scores[remain_inds]
             
-            dets_second = bboxes[inds_second]
+            dets_second = torch.from_numpy(bboxes[inds_second])
             scores_second = scores[inds_second]
 
             # ----- Extract ReID Features for High Confidence Detections Only
@@ -497,7 +501,7 @@ class YOLOBYTETracker(object):
             
             for i, det in enumerate(dets):
                 
-                x1, y1, x2, y2, cls_id = det
+                x1, y1, x2, y2, conf, cls_id = det
 
                 # L2 Normalize Feature Map
                 reid_map = F.normalize(reid_map, dim=1)
@@ -514,7 +518,7 @@ class YOLOBYTETracker(object):
                 center_y += 0.5
                 center_x = center_x.long()
                 center_y = center_y.long()
-                center_x.clamp_(0, w_id_map - 1)
+                center_x.clamp_(0, w_id_map - 1)  # to avoid the object center out of reid feature map's range
                 center_y.clamp_(0, h_id_map - 1)
 
                 # Get reID Feature Vector
@@ -524,7 +528,7 @@ class YOLOBYTETracker(object):
                 id_vects_dict[int(cls_id)].append(id_feat_vect)     # Add feat vect to dict(key: cls_id)
 
             # ----- Map Detections to Original Input Image Coordinates
-            dets = map_to_orig_coords(dets, net_w, net_h, orig_w, orig_h)
+            # dets = map_to_orig_coords(dets, net_w, net_h, orig_w, orig_h)
 
 
         # ----- Process Tracking for Each Object Class
@@ -575,7 +579,7 @@ class YOLOBYTETracker(object):
             # Perform Embedding Distance Calculations & Assignment
             dists = matching.embedding_distance(track_pool_dict[cls_id], cls_detections)
             dists = matching.fuse_motion(self.kalman_filter, dists, track_pool_dict[cls_id], cls_detections)
-            matches, u_track, u_detection = matching.linear_assignment(dists, thresh=0.7)
+            matches, u_track, u_detection = matching.linear_assignment(dists, thresh=0.9)
             
             # Process Matched Pairs between Track Pool & Current Detections
             for i_tracked, i_det in matches:
@@ -595,10 +599,10 @@ class YOLOBYTETracker(object):
             # Track Pool is Residual from Previous Associations
             cls_detections = [cls_detections[i] for i in u_detection]
             r_tracked_tracks = [track_pool_dict[cls_id][i] for i in u_track if track_pool_dict[cls_id][i].state == TrackState.Tracked]
-            
+
             # Perform IoU Distance Calculations & Assignment
             dists = matching.iou_distance(r_tracked_tracks, cls_detections)
-            matches, u_track, u_detection = matching.linear_assignment(dists, thresh=0.5)
+            matches, u_track, u_detection = matching.linear_assignment(dists, thresh=0.8)
             
             # Process Matched Pairs between Track Pool & Current Detections
             for i_tracked, i_det in matches:
@@ -618,29 +622,29 @@ class YOLOBYTETracker(object):
                 cls_detections_low = [
                                     MCTrack(
                                         MCTrack.tlbr_to_tlwh(tlbrs[:4]), tlbrs[4], None, self.opt.num_classes, cls_id, 30
-                                        ) for (tlbrs, feature) in cls_dets_low[:, :5]
+                                        ) for (tlbrs) in cls_dets_low[:, :5]
                                     ]
             else:
                 cls_detections_low = []
             
             # Track Pool is Residual from Previous Two Associations
-            r_tracked_stracks = [strack_pool[i] for i in u_track if strack_pool[i].state == TrackState.Tracked]
-            
+            r_tracked_tracks = [track_pool_dict[cls_id][i] for i in u_track if track_pool_dict[cls_id][i].state == TrackState.Tracked]
+
             # Perform IoU Distance Calculations & Assignment
             # If low confidence detections are not matched, we throw them away :(
-            dists = matching.iou_distance(r_tracked_stracks, cls_detections_low)
-            matches, u_track, u_detection_low = matching.linear_assignment(dists, thresh=0.5)
-
+            dists = matching.iou_distance(r_tracked_tracks, cls_detections_low)
+            matches, u_track, u_detection_low = matching.linear_assignment(dists, thresh=0.8)
+            
             # Process Matched Pairs between Track Pool & Low Confidence Detections
             for itracked, idet in matches:
-                track = r_tracked_stracks[itracked]
-                det = detections_second[idet]
+                track = r_tracked_tracks[itracked]
+                det = cls_detections_low[idet]
                 if track.state == TrackState.Tracked:
-                    track.update(det, self.frame_id)
-                    activated_starcks.append(track)
+                    track.update(det, self.frame_id, update_feature=False)
+                    activated_tracks_dict[cls_id].append(track)
                 else:
                     track.re_activate(det, self.frame_id, new_id=False)
-                    refind_stracks.append(track)
+                    refound_tracks_dict[cls_id].append(track)
             
 
             """ ----- Finally, Handle Untracked Tracks & Detections ----- """
@@ -673,7 +677,7 @@ class YOLOBYTETracker(object):
             
             for i_new in u_detection:
                 track = cls_detections[i_new]
-                if track.score < self.det_thresh:
+                if track.score < opt.det_thre:
                     continue
 
                 # Tracked But Not Activated
@@ -819,3 +823,11 @@ def bytepostprocess(prediction, num_classes, conf_thre=0.7, nms_thre=0.45, class
             output[i] = torch.cat((output[i], detections))
 
     return output
+
+def clip_val(value, min, max):
+    if min <= value <= max:
+        return value
+    elif value > max:
+        return max
+    elif value < min:
+        return min

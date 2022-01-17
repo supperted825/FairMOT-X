@@ -433,40 +433,6 @@ class YOLOTracker(object):
         self.kalman_filter = KalmanFilter()
 
 
-    def update_detection(self, img, img0):
-        """
-        :param img:
-        :param img0:
-        :return:
-        """
-        
-        # ----- Perform Detection Only, No ReID Features
-        net_h, net_w = img.shape[2:]
-        orig_h, orig_w, _ = img0.shape  # H×W×C
-
-        with torch.no_grad():
-            
-            # ----- Forward Pass in Eval Mode Returns BBOX & ReID
-            pred, _ = self.model.forward(img)
-            pred = pred.float()
-
-            # ----- Applies NMS and Returns bboxes
-            pred = postprocess(pred, self.opt.num_classes,
-                               conf_thre=opt.det_thre,
-                               nms_thre=opt.nms_thre,
-                               class_agnostic=True)
-
-            dets = pred[0]  # Assume Batch Size 1
-
-            if dets is None:
-                print('[Warning]: No objects detected.')
-                return None
-
-            dets = map_to_orig_coords(dets, net_w, net_h, orig_w, orig_h)
-
-        return dets
-
-
     def update_tracking(self, img, img0):
         """
         Update tracking result of the frame
@@ -513,7 +479,7 @@ class YOLOTracker(object):
 
             if dets is None:
                 print('[Warning]: No objects detected.')
-                exit(-1)
+                return output_tracks_dict
 
             # ----- Extract ReID Features for Each Detection
             
@@ -598,7 +564,7 @@ class YOLOTracker(object):
             # Perform Embedding Distance Calculations & Assignment
             dists = matching.embedding_distance(track_pool_dict[cls_id], cls_detections)
             dists = matching.fuse_motion(self.kalman_filter, dists, track_pool_dict[cls_id], cls_detections)
-            matches, u_track, u_detection = matching.linear_assignment(dists, thresh=0.7)
+            matches, u_track, u_detection = matching.linear_assignment(dists, thresh=0.4)
             
             # Process Matched Pairs between Track Pool & Current Detections
             for i_tracked, i_det in matches:
@@ -620,7 +586,7 @@ class YOLOTracker(object):
             
             # Perform IoU Distance Calculations & Assignment
             dists = matching.iou_distance(r_tracked_tracks, cls_detections)
-            matches, u_track, u_detection = matching.linear_assignment(dists, thresh=0.5)
+            matches, u_track, u_detection = matching.linear_assignment(dists, thresh=0.9)
             
             # Process Matched Pairs between Track Pool & Current Detections
             for i_tracked, i_det in matches:
@@ -645,7 +611,7 @@ class YOLOTracker(object):
             # Match Dormant Tracks with 2-Round Unmatched Dets
             cls_detections = [cls_detections[i] for i in u_detection]
             dists = matching.iou_distance(unconfirmed_dict[cls_id], cls_detections)
-            matches, u_unconfirmed, u_detection = matching.linear_assignment(dists, thresh=0.7)
+            matches, u_unconfirmed, u_detection = matching.linear_assignment(dists, thresh=0.5)
             
             # Update Matched Tracks with New Detections
             for i_tracked, i_det in matches:
