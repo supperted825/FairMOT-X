@@ -39,7 +39,7 @@ class FeatureFusor(nn.Module):
     
     # in_channels = [256, 512, 1024], we down channel all of them to 256
     
-    def __init__(self, in_channels, reid_feat_dim):
+    def __init__(self, in_channels, width, reid_feat_dim):
         super(FeatureFusor, self).__init__()
 
         # Upsample Layers
@@ -48,10 +48,10 @@ class FeatureFusor(nn.Module):
         self.p1_upsample = nn.Upsample(scale_factor=2, mode='nearest')
         
         # Downchannel Layers with DCN
-        self.p3_deform_conv_2 = DeformConv(in_channels[2], reid_feat_dim)
-        self.p2_deform_conv_1 = DeformConv(in_channels[1], reid_feat_dim)
+        self.p3_deform_conv_2 = DeformConv(int(in_channels[2] * width), reid_feat_dim)
+        self.p2_deform_conv_1 = DeformConv(int(in_channels[1] * width), reid_feat_dim)
+        self.p1_deform_conv_1 = DeformConv(int(in_channels[0] * width), reid_feat_dim)
         self.p2_deform_conv_2 = DeformConv(reid_feat_dim , reid_feat_dim)
-        self.p1_deform_conv_1 = DeformConv(in_channels[0], reid_feat_dim)
         self.p1_deform_conv_2 = DeformConv(reid_feat_dim , reid_feat_dim)
         
 
@@ -184,7 +184,7 @@ class YOLOXHead(nn.Module):
         
         # ----- For ReID Branch
         self.uncertainty_loss = opt.uncertainty_loss
-        self.feature_map = FeatureFusor(in_channels, opt.reid_dim)
+        self.feature_map = FeatureFusor(in_channels, width, opt.reid_dim)
         self.reid_loss = nn.CrossEntropyLoss()
 
         # ----- Define ReID Classifiers

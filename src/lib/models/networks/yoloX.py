@@ -6,7 +6,6 @@ import torch.nn as nn
 from .yolox.yolo_head import YOLOXHead
 from .yolox.yolo_pafpn import YOLOPAFPN
 
-
 class YOLOXMOT(nn.Module):
     """
     YOLOX model module. The module list is defined by create_yolov3_modules function.
@@ -20,7 +19,7 @@ class YOLOXMOT(nn.Module):
         super().__init__()
 
         self.backbone = YOLOPAFPN(opt.yolo_depth, opt.yolo_width)
-        self.head = YOLOXHead(opt.num_classes, opt=opt)
+        self.head = YOLOXHead(opt.num_classes, width=opt.yolo_width, opt=opt)
 
     def forward(self, x, targets=None):
         
