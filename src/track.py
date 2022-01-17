@@ -13,6 +13,7 @@ import json
 import logging
 import argparse
 import motmetrics as mm
+from tqdm import tqdm
 import numpy as np
 import torch
 
@@ -81,50 +82,11 @@ def write_bdd_results(filename, results):
                 x2, y2 = x1 + w, y1 + h
                 l_dict['box2d'] = {'x1': x1, 'x2': x2, 'y1': y1, 'y2': y2}
                 json_results[frame-1]["labels"].append(l_dict)
+                
+    logger.info('save results to {}'.format(filename))
 
-    with open(filename + ".json", 'w') as f:
+    with open(filename if ".json" in filename else filename + ".json", 'w') as f:
         json.dump(json_results, f)
-
-
-def write_results_dict(file_name, results_dict, data_type, num_classes=5):
-    """
-    :param file_name:
-    :param results_dict:
-    :param data_type:
-    :param num_classes:
-    :return:
-    """
-    if data_type == 'mot':
-        # save_format = '{frame},{id},{x1},{y1},{w},{h},1,-1,-1,-1\n'
-        save_format = '{frame},{id},{x1},{y1},{w},{h},1,{cls_id},1\n'
-        save_format = '{frame},{id},{x1},{y1},{w},{h},{score},{cls_id},1\n'
-    elif data_type == 'kitti':
-        save_format = '{frame} {id} pedestrian 0 0 -10 {x1} {y1} {x2} {y2} -10 -10 -10 -1000 -1000 -1000 -10\n'
-    else:
-        raise ValueError(data_type)
-
-    with open(file_name, 'w') as f:
-        for cls_id in range(num_classes):  # process each object class
-            cls_results = results_dict[cls_id]
-            for frame_id, tlwhs, track_ids, scores in cls_results:
-                if data_type == 'kitti':
-                    frame_id -= 1
-
-                for tlwh, track_id, score in zip(tlwhs, track_ids, scores):
-                    if track_id < 0:
-                        continue
-
-                    x1, y1, w, h = tlwh
-                    # x2, y2 = x1 + w, y1 + h
-                    # line = save_format.format(frame=frame_id, id=track_id, x1=x1, y1=y1, x2=x2, y2=y2, w=w, h=h)
-                    line = save_format.format(frame=frame_id,
-                                              id=track_id,
-                                              x1=x1, y1=y1, w=w, h=h,
-                                              score=score,  # detection score
-                                              cls_id=cls_id)
-                    f.write(line)
-
-    logger.info('save results to {}'.format(file_name))
 
 
 def format_dets_dict2dets_list(dets_dict, w, h):
@@ -146,96 +108,6 @@ def format_dets_dict2dets_list(dets_dict, w, h):
             dets_list.append([int(cls_id), score, center_x, center_y, bbox_w, bbox_h])
 
     return dets_list
-
-
-def eval_imgs_output_dets(opt,
-                          data_loader,
-                          data_type,
-                          result_f_name,
-                          out_dir,
-                          save_dir=None,
-                          show_image=True):
-    """
-    :param opt:
-    :param data_loader:
-    :param data_type:
-    :param result_f_name:
-    :param out_dir:
-    :param save_dir:
-    :param show_image:
-    :return:
-    """
-    if save_dir:
-        mkdir_if_missing(save_dir)
-
-    if not os.path.isdir(out_dir):
-        os.makedirs(out_dir)
-    else:
-        shutil.rmtree(out_dir)
-        os.makedirs(out_dir)
-
-    # init tracker
-    tracker = JDETracker(opt, frame_rate=30)
-
-    timer = Timer()
-
-    results_dict = defaultdict(list)
-    frame_id = 0  # frame index(start from 0)
-    for path, img, img_0 in data_loader:
-        if frame_id % 30 == 0:
-            logger.info('Processing frame {} ({:.2f} fps)'
-                        .format(frame_id, 1.0 / max(1e-5, timer.average_time)))
-
-        blob = torch.from_numpy(img).to(opt.device).unsqueeze(0)
-
-        # ----- run detection
-        timer.tic()
-
-        # update detection results
-        dets_dict = tracker.update_detection(blob, img_0)
-
-        timer.toc()
-        # -----
-
-        # plot detection results
-        if show_image or save_dir is not None:
-            online_im = vis.plot_detects(image=img_0,
-                                         dets_dict=dets_dict,
-                                         num_classes=opt.num_classes,
-                                         frame_id=frame_id,
-                                         fps=1.0 / max(1e-5, timer.average_time))
-
-        if frame_id > 0:
-            # 是否显示中间结果
-            if show_image:
-                cv2.imshow('online_im', online_im)
-            if save_dir is not None:
-                cv2.imwrite(os.path.join(save_dir, '{:05d}.jpg'.format(frame_id)), online_im)
-
-        # ----- 格式化并输出detection结果(txt)到指定目录
-        # 格式化
-        dets_list = format_dets_dict2dets_list(dets_dict, w=img_0.shape[1], h=img_0.shape[0])
-
-        # 输出label(txt)到指定目录
-        out_img_name = os.path.split(path)[-1]
-        out_f_name = out_img_name.replace('.jpg', '.txt')
-        out_f_path = out_dir + '/' + out_f_name
-        with open(out_f_path, 'w', encoding='utf-8') as w_h:
-            w_h.write('class prob x y w h total=' + str(len(dets_list)) + '\n')
-            for det in dets_list:
-                w_h.write('%d %f %f %f %f %f\n' % (det[0], det[1], det[2], det[3], det[4], det[5]))
-        print('{} written'.format(out_f_path))
-
-        # 处理完一帧, 更新frame_id
-        frame_id += 1
-    print('Total {:d} detection result output.\n'.format(frame_id))
-
-    # 写入最终结果save results
-    write_results_dict(result_f_name, results_dict, data_type)
-
-    # 返回结果
-    return frame_id, timer.average_time, timer.calls
-
 
 def eval_seq(opt,
              data_loader,
@@ -260,7 +132,7 @@ def eval_seq(opt,
         mkdir_if_missing(save_dir)
 
     # tracker = JDETracker(opt, frame_rate)
-    # tracker = YOLOBYTETracker(opt, frame_rate)
+    # tracker = YOLOBYTETracker(opt)
     tracker = YOLOTracker(opt)
 
     timer = Timer()
@@ -317,24 +189,6 @@ def eval_seq(opt,
                                                          frame_id=frame_id,
                                                          fps=1.0 / timer.average_time)
 
-        elif mode == 'detect':  # process detections
-            timer.tic()
-
-            # update detection results of this frame(or image)
-            dets_dict = tracker.update_detection(blob, img0)
-
-            timer.toc()
-
-            # plot detection results
-            if show_image or save_dir is not None:
-                online_im = vis.plot_detects(image=img0,
-                                             dets_dict=dets_dict,
-                                             num_classes=opt.num_classes,
-                                             frame_id=frame_id,
-                                             fps=1.0 / max(1e-5, timer.average_time))
-        else:
-            print('[Err]: un-recognized mode.')
-
         if frame_id > 0:
             if show_image:
                 cv2.imshow('online_im', online_im)
@@ -359,9 +213,11 @@ def main(opt,
          show_image=True):
 
     logger.setLevel(logging.INFO)
+    
+    epochnum = int(opt.load_model.split("_")[-1][:-4])
 
     exp_root = f"/home/svu/e0425991/FairMOT-X/results/val/{exp_name}"
-    result_root = f"/home/svu/e0425991/FairMOT/results/val/{exp_name}/{epochnum}"
+    result_root = f"/home/svu/e0425991/FairMOT-X/results/val/{exp_name}/epoch{epochnum}"
     mkdir_if_missing(exp_root)
     mkdir_if_missing(result_root)
     
@@ -372,11 +228,11 @@ def main(opt,
     n_frame = 0
     timer_avgs, timer_calls = [], []
     
-    for seq in seqs:
+    for seq in tqdm(seqs):
         output_dir = osp.join(data_root, '..', 'outputs', exp_name, seq) if save_images or save_videos else None
         logger.info('start seq: {}'.format(seq))
         
-        dataloader = datasets.LoadImages(osp.join(data_root, seq), opt.img_size)
+        dataloader = datasets.LoadImages(osp.join(data_root, seq))
 
         result_filename = osp.join(result_root, '{}.json'.format(seq))
 
@@ -396,103 +252,27 @@ def main(opt,
     avg_time = all_time / np.sum(timer_calls)
     logger.info('Time elapsed: {:.2f} seconds, FPS: {:.2f}'.format(all_time, 1.0 / avg_time))
 
+def FindFreeGPU():
+    """
+    :return:
+    """
+    os.system('nvidia-smi -q -d Memory |grep -A4 GPU|grep Free > tmp')
+    memory_left_gpu = [int(x.split()[2]) for x in open('tmp', 'r').readlines()]
+
+    most_free_gpu_idx = np.argmax(memory_left_gpu)
+    # print(str(most_free_gpu_idx))
+    return int(most_free_gpu_idx)
 
 if __name__ == '__main__':
     os.environ['CUDA_VISIBLE_DEVICES'] = '0'
     opt = opts().init()
-
-    if not opt.val_mot16:
-        seqs_str = '''KITTI-13
-                      KITTI-17
-                      ADL-Rundle-6
-                      PETS09-S2L1
-                      TUD-Campus
-                      TUD-Stadtmitte'''
-        data_root = os.path.join(opt.data_dir, 'MOT15/images/train')
-    else:
-        seqs_str = '''MOT16-02
-                      MOT16-04
-                      MOT16-05
-                      MOT16-09
-                      MOT16-10
-                      MOT16-11
-                      MOT16-13'''
-        data_root = os.path.join(opt.data_dir, 'MOT16/train')
-    if opt.test_mot16:
-        seqs_str = '''MOT16-01
-                      MOT16-03
-                      MOT16-06
-                      MOT16-07
-                      MOT16-08
-                      MOT16-12
-                      MOT16-14'''
-        data_root = os.path.join(opt.data_dir, 'MOT16/test')
-    if opt.test_mot15:
-        seqs_str = '''ADL-Rundle-1
-                      ADL-Rundle-3
-                      AVG-TownCentre
-                      ETH-Crossing
-                      ETH-Jelmoli
-                      ETH-Linthescher
-                      KITTI-16
-                      KITTI-19
-                      PETS09-S2L2
-                      TUD-Crossing
-                      Venice-1'''
-        data_root = os.path.join(opt.data_dir, 'MOT15/images/test')
-    if opt.test_mot17:
-        seqs_str = '''MOT17-01-SDP
-                      MOT17-03-SDP
-                      MOT17-06-SDP
-                      MOT17-07-SDP
-                      MOT17-08-SDP
-                      MOT17-12-SDP
-                      MOT17-14-SDP'''
-        data_root = os.path.join(opt.data_dir, 'MOT17/images/test')
-    if opt.val_mot17:
-        seqs_str = '''MOT17-02-SDP
-                      MOT17-04-SDP
-                      MOT17-05-SDP
-                      MOT17-09-SDP
-                      MOT17-10-SDP
-                      MOT17-11-SDP
-                      MOT17-13-SDP'''
-        data_root = os.path.join(opt.data_dir, 'MOT17/images/train')
-    if opt.val_mot15:
-        seqs_str = '''KITTI-13
-                      KITTI-17
-                      ETH-Bahnhof
-                      ETH-Sunnyday
-                      PETS09-S2L1
-                      TUD-Campus
-                      TUD-Stadtmitte
-                      ADL-Rundle-6
-                      ADL-Rundle-8
-                      ETH-Pedcross2
-                      TUD-Stadtmitte'''
-        data_root = os.path.join(opt.data_dir, 'MOT15/images/train')
-    if opt.val_mot20:
-        seqs_str = '''MOT20-01
-                      MOT20-02
-                      MOT20-03
-                      MOT20-05
-                      '''
-        data_root = os.path.join(opt.data_dir, 'MOT20/images/train')
-    if opt.test_mot20:
-        seqs_str = '''MOT20-04
-                      MOT20-06
-                      MOT20-07
-                      MOT20-08
-                      '''
-        data_root = os.path.join(opt.data_dir, 'MOT20/images/test')
-    
-    # seqs = [seq.strip() for seq in seqs_str.split()]
+    opt.device = FindFreeGPU()
     
     val_data = "/hpctmp/e0425991/datasets/bdd100k/bdd100k/images/track/val/"
-    seqs = os.listdir(opt.data_dir)
+    seqs = os.listdir(val_data)
 
     main(opt,
-         data_root=data_root,
+         data_root=val_data,
          seqs=seqs,
          exp_name=opt.exp_id,
          show_image=False,

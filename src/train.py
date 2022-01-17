@@ -46,7 +46,7 @@ def run(opt):
     os.environ['CUDA_VISIBLE_DEVICES'] = opt.gpus_str
     opt.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-    print('Creating model...')
+    print('Creating model...', flush=True)
     model = create_model(opt.arch, opt=opt)
 
     # 初始化优化器
@@ -75,11 +75,16 @@ def run(opt):
     trainer = Trainer(opt=opt, model=model, optimizer=optimizer)
     trainer.set_device(opt.gpus, opt.chunk_sizes, opt.device)
     
+    if opt.l1_loss:
+        print("Training with L1 Loss from Start", flush=True)
+        model.head.use_l1 = True
+    
     for epoch in range(start_epoch + 1, opt.num_epochs + 1):
         
-        if epoch + 1 == opt.num_epochs - 15:
-            dataset.augment = False
+        if epoch >= 15:
+            print('No Augmentation from Epoch 15', flush=True)
             dataset.mosaic = False
+            dataset.augment = False
             model.head.use_l1 = True
 
         # Train an epoch
@@ -96,16 +101,13 @@ def run(opt):
             os.mkdir(f'/hpctmp/e0425991/modelrepo/FairMOT-X/{opt.exp_id}/')
             
         save_model(os.path.join(f'/hpctmp/e0425991/modelrepo/FairMOT-X/{opt.exp_id}/', f'model_{epoch}.pth'), epoch, model, optimizer)
-        save_model(os.path.join(opt.save_dir, 'model_last.pth'), epoch, model, optimizer)
+        save_model(os.path.join(f'/hpctmp/e0425991/modelrepo/FairMOT-X/{opt.exp_id}/', 'model_last.pth'), epoch, model, optimizer)
 
         logger.write('\n')
 
         if epoch in opt.lr_step:
             
-            if opt.exp_id == "yolo-l5":
-                lr = opt.lr * (0.1 ** (opt.lr_step.index(epoch) + 4))
-            else:
-                lr = opt.lr * (0.1 ** (opt.lr_step.index(epoch) + 1))
+            lr = opt.lr * (0.1 ** (opt.lr_step.index(epoch) + 1))
             print('Drop LR to', lr, flush=True)
 
             for param_group in optimizer.param_groups:

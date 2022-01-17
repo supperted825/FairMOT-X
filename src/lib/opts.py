@@ -16,6 +16,10 @@ class opts(object):
         self.parser.add_argument('--exp_id', default='default')
         self.parser.add_argument('--val', action='store_true')
         self.parser.add_argument('--test', action='store_true')
+        self.parser.add_argument('--start_epoch',
+                                 type=int,
+                                 default=1,
+                                 help='epoch to start from for validation')
         self.parser.add_argument('--load_model', default='', help='path to pretrained model')
         self.parser.add_argument('--resume',
                                  action='store_true',
@@ -109,7 +113,7 @@ class opts(object):
                                  help='drop learning rate by 10.')
         self.parser.add_argument('--num_epochs',
                                  type=int,
-                                 default=60,  # 30, 10, 3, 1
+                                 default=20,  # 30, 10, 3, 1
                                  help='total training epochs.')
         self.parser.add_argument('--batch_size',
                                  type=int,
@@ -179,11 +183,11 @@ class opts(object):
                                 help='confidence thresh for tracking')
         self.parser.add_argument('--det_thre',
                                  type=float,
-                                 default=0.3,
+                                 default=0.2,
                                  help='confidence thresh for detection')
         self.parser.add_argument('--nms_thre',
                                  type=float,
-                                 default=0.45,
+                                 default=0.4,
                                  help='iou thresh for nms')
         self.parser.add_argument('--track_buffer',
                                  type=int,
@@ -191,7 +195,7 @@ class opts(object):
                                  help='tracking buffer')
         self.parser.add_argument('--min-box-area',
                                  type=float,
-                                 default=100,
+                                 default=20,
                                  help='filter out tiny boxes')
 
         # 测试阶段的输入数据模式: video or image dir
@@ -220,9 +224,16 @@ class opts(object):
                                  default='/hpctmp/e0425991/datasets/bdd100k/bdd100k/MOT')
 
         # loss
-        self.parser.add_argument('--uncertainty_loss', dest='uncertainty_loss', action='store_true')
-        self.parser.add_argument('--no_uncertainty_loss', dest='uncertainty_loss', action='store_false')
+        self.parser.add_argument('--uncertainty_loss',
+                                 dest='uncertainty_loss',
+                                 action='store_true')
+        self.parser.add_argument('--no_uncertainty_loss',
+                                 dest='uncertainty_loss',
+                                 action='store_false')
         self.parser.set_defaults(uncertainty_loss=True)
+        
+        self.parser.add_argument('--l1_loss',
+                                 action='store_true')
         
         self.parser.add_argument('--reg_loss',
                                  default='l1',
@@ -341,11 +352,19 @@ class opts(object):
         print('The output will be saved to ', opt.save_dir)
 
         if opt.resume and opt.load_model == '':
-            model_path = opt.save_dir
+            model_path = os.path.join('/hpctmp/e0425991/modelrepo/MCMOT/', opt.exp_id)
             opt.load_model = os.path.join(model_path, 'model_last.pth')
+
             if not os.path.exists(opt.load_model):
-                print("Although --resume was specified, there is no model to load. Training from Epoch 1.")
-                opt.load_model = ''
+                print("No last model to load in modelrepo. Trying opt.save_dir.")
+                
+                opt.load_model = os.path.join(opt.save_dir, 'model_last.pth')
+                
+                if not os.path.exists(opt.load_model):
+                    print("Although --resume was specified, there is no model to load. Training from Epoch 1.")
+                    opt.load_model = ''
+                else:
+                    print("Loaded model from opt.save_dir. Next model will be saved to modelrepo.")
         return opt
 
     def update_dataset_info_and_set_heads(self, opt, dataset):
@@ -361,25 +380,32 @@ class opts(object):
             if int(reid_id) > opt.num_classes - 1:
                 print('[ERROR]: Configuration conflict of reid_cls_ids and num_classes!')
                 return
+            
+        opt.nID_dict = dataset.nID_dict
 
         print("Heads are Predefined in YOLOX!")
 
         return opt
         
     def init(self, args=''):
-        opt = self.parse(args)
+            opt = self.parse(args)
 
-        default_dataset_info = {
-            'mot': {'default_input_wh': [1024, 576],
-                    'num_classes': len(opt.reid_cls_ids.split(','))
-                    }
-        }
+            default_dataset_info = {
+                'mot': {'default_input_wh': [1024, 576],
+                        'num_classes': len(opt.reid_cls_ids.split(',')),  # 1
+                        'mean': [0.408, 0.447, 0.470],
+                        'std': [0.289, 0.274, 0.278],
+                        # 'dataset': 'bdd100k',
+                        # 'nID': 14455,
+                        'nID_dict': {}},
+            }
 
-        class Struct:
-            def __init__(self, entries):
-                for k, v in entries.items():
-                    self.__setattr__(k, v)
-        dataset = Struct(default_dataset_info[opt.task])
-        opt = self.update_dataset_info_and_set_heads(opt, dataset)
+            class Struct:
+                def __init__(self, entries):
+                    for k, v in entries.items():
+                        self.__setattr__(k, v)
+            dataset = Struct(default_dataset_info[opt.task])
+            # opt.dataset = dataset.dataset
+            opt = self.update_dataset_info_and_set_heads(opt, dataset)
 
-        return opt
+            return opt
