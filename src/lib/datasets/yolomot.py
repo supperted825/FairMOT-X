@@ -73,7 +73,7 @@ class LoadImages:
         :param img_size:
         """
         self.frame_rate = 10  # no actual meaning here
-
+        print(path)
         if type(path) == str:
             if os.path.isdir(path):
                 image_format = ['.jpg', '.jpeg', '.png', '.tif']
@@ -82,6 +82,7 @@ class LoadImages:
                                                        1].lower() in image_format, self.files))
             elif os.path.isfile(path):
                 self.files = [path]
+
         elif type(path) == list:
             self.files = path
 
@@ -138,6 +139,60 @@ class LoadImages:
 
     def __len__(self):
         return self.nF  # number of files
+
+
+class LoadVideo:  # for inference
+    def __init__(self, path, img_size=(1024, 576)):
+        """
+        :param path:
+        :param img_size:
+        """
+        self.cap = cv2.VideoCapture(path)
+        self.frame_rate = int(round(self.cap.get(cv2.CAP_PROP_FPS)))
+        self.vw = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.vh = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        self.vn = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+        self.width = img_size[0]
+        self.height = img_size[1]
+        self.count = 0
+
+        self.w, self.h = 1920, 1080  # 设置(输出的分辨率)
+        print('Length of the video: {:d} frames'.format(self.vn))
+
+    def get_size(self, vw, vh, dw, dh):
+        wa, ha = float(dw) / vw, float(dh) / vh
+        a = min(wa, ha)
+        return int(vw * a), int(vh * a)
+
+    def __iter__(self):
+        self.count = -1
+        return self
+
+    def __next__(self):
+        self.count += 1
+        if self.count == len(self):
+            raise StopIteration
+
+        # Read image
+        res, img_0 = self.cap.read()  # BGR
+        assert img_0 is not None, 'Failed to load frame {:d}'.format(self.count)
+        img_0 = cv2.resize(img_0, (self.w, self.h))
+
+        # Padded resize
+        img, _, _ = letterbox(img_0, (self.height, self.width))
+
+        # Normalize RGB
+        img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR->RGB and HWC->CHW
+        img = np.ascontiguousarray(img, dtype=np.float32)
+        img /= 255.0
+
+        # save letterbox image
+        # cv2.imwrite(img_path + '.letterbox.jpg', 255 * img.transpose((1, 2, 0))[:, :, ::-1])
+        return self.count, img, img_0
+
+    def __len__(self):
+        return self.vn  # number of files
 
 
 class LoadWebcam:  # for inference
@@ -323,19 +378,14 @@ class YOLOMOT(Dataset):  # for training/testing
         self.max_objs = opt.K
         self.img_size = img_size
 
-        # ----- Cache labels
-        self.labels = [np.zeros((0, 6), dtype=np.float32)] * n
-
         # ------ Check for QuickLoad of Image Labels
-        if os.path.exists(labels) and os.path.exists(tid_num) and not opt.val:
-            print("Loading cached labels & ID Dict...")
-            self.labels = np.load(labels, allow_pickle=True)
+        if os.path.exists(tid_num) and not opt.val:
+            print("Loading cached ID Dict...")
             with open(tid_num) as json_file:
                 self.tid_num = json.load(json_file)
         
-        elif os.path.exists(labelsval) and os.path.exists(tidnumval) and opt.val:
-            print("Loading cached validation labels & ID Dict...")
-            self.labels = np.load(labelsval, allow_picke=True)
+        elif os.path.exists(tidnumval) and opt.val:
+            print("Loading cached validation ID Dict...")
             with open(tidnumval) as json_file:
                 self.tid_num = json.load(json_file)
         
@@ -346,10 +396,9 @@ class YOLOMOT(Dataset):  # for training/testing
             self.tid_num = OrderedDict()
             self.tid_start_index = OrderedDict()
             
-            for ds, label_paths in self.label_files.items():  # 每个子数据集
+            for ds, label_paths in self.label_files.items():
                 max_ids_dict = defaultdict(int)  # cls_id => max track id
 
-                # 子数据集中每个label
                 for lp in tqdm(label_paths):
                     if not os.path.isfile(lp):
                         print('[WARNING] : Invalid Label File {}.'.format(lp))
@@ -363,11 +412,6 @@ class YOLOMOT(Dataset):  # for training/testing
 
                     assert (lb >= 0).all(), 'Negative Labels: %s' % file
                     assert (lb[:, 2:] <= 1).all(), 'Non-normalized or Out of Bounds Coordinates: %s' % file
-
-                    if single_cls:
-                        lb[:, 0] = 0  # force dataset into single-class mode: turn mc to sc
-
-                    self.labels[i] = lb
                 
                     for item in lb:  # label中每一个item(检测目标)
                         if item[1] > max_ids_dict[int(item[0])]:  # item[0]: cls_id, item[1]: track id
@@ -378,13 +422,11 @@ class YOLOMOT(Dataset):  # for training/testing
                 
             # ----- save dicts to json to save time in future
             if opt.val:
-                print("Writing cached labels & max ID dict to JSON...")
-                np.save(labels, self.labels)
+                print("Writing cached max ID dict to JSON...")
                 with open(tidnumval, 'w', encoding='utf-8') as f:
                     json.dump(self.tid_num, f, ensure_ascii=False, indent=4)    
             else:
-                print("Writing cached validation labels & max ID dict to JSON...")
-                np.save(labelsval, self.labels)
+                print("Writing cached validationmax ID dict to JSON...")
                 with open(tid_num, 'w', encoding='utf-8') as f:
                     json.dump(self.tid_num, f, ensure_ascii=False, indent=4)  
                     
@@ -430,7 +472,7 @@ class YOLOMOT(Dataset):  # for training/testing
                 img = cv2.resize(img, self.img_size[::-1])
             
             labels = []
-            x = self.labels[idx][:, [0, 2, 3, 4, 5]]  # Skip Loading Track IDs
+            x = np.loadtxt(self.label_files[idx]).reshape(-1, 6)[:, [0, 2, 3, 4, 5]]  # Skip Loading Track IDs
             if x.size > 0:
                 # Normaliseded xywh to pixel xyxy format:
                 # For compatibility with random_affine function
@@ -441,7 +483,7 @@ class YOLOMOT(Dataset):  # for training/testing
                 labels[:, 4] = resize_ratio * h * (x[:, 2] + x[:, 4] / 2)      # y2 = ct - h / 2
             
             # Now We Load Track IDs
-            track_ids = self.labels[idx][:, 1]
+            track_ids = np.loadtxt(self.label_files[idx]).reshape(-1, 6)[:, 1]
         
         if self.augment:
             if not self.mosaic:
@@ -679,9 +721,9 @@ def letterbox(img,
 def random_affine_with_ids(img,
                            targets,
                            track_ids,
-                           degrees=2.5,
+                           degrees=5,
                            translate=0.1,
-                           scale=0.1,
+                           scale=0.2,
                            shear=2.5,
                            border=0):
     """
@@ -755,7 +797,7 @@ def random_affine_with_ids(img,
     return img, targets, track_ids
 
 
-def random_affine(img, targets=(), degrees=10, translate=.1, scale=.1, shear=10, border=0):
+def random_affine(img, targets=(), degrees=5, translate=.1, scale=.2, shear=2.5, border=0):
     # torchvision.transforms.RandomAffine(degrees=(-10, 10), translate=(.1, .1), scale=(.9, 1.1), shear=(-10, 10))
     # https://medium.com/uruvideo/dataset-augmentation-with-random-homographies-a8f4b44830d4
 
@@ -831,14 +873,14 @@ def load_mosaic_with_ids(self, index):
     yc = int((random.uniform(0.35, 0.65) * net_in_h))
     
     # Grab 3 Other Random Indices
-    indices = [index] + [random.randint(0, len(self.labels) - 1) for _ in range(3)]
+    indices = [index] + [random.randint(0, len(self.label_files) - 1) for _ in range(3)]
     
     for i, index in enumerate(indices):
         
         # Load Image
         img, (h, w) = load_image(self, index)
-        labels = self.labels[index][:, [0,2,3,4,5]]
-        track_ids = self.labels[index][:, 1]
+        labels = np.loadtxt(self.label_files[index]).reshape(-1, 6)[:, [0,2,3,4,5]]
+        track_ids = np.loadtxt(self.label_files[index]).reshape(-1, 6)[:, 1]
 
         # Generate Coordinates for Each Corner
         # On First Run, Initialize Base Array with Arbitrary Pixel Value of 114
