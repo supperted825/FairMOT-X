@@ -1,11 +1,11 @@
 # FairMOT-X
 
-FairMOT-X is a multi-class multi object tracker based on [FairMOT](https://github.com/ifzhang/FairMOT), which has been tailored for training on the BDD100K MOT Dataset. It makes use of [YOLOX](https://github.com/Megvii-BaseDetection/YOLOX) as the detector from end-to-end, and uses deformable convolutions (DCN) to perform feature fusion of PAFPN outputs to learn the ReID embedding.
+FairMOT-X is a multi-class multi object tracker based on [FairMOT](https://github.com/ifzhang/FairMOT), which has been tailored for training on the BDD100K MOT Dataset. It makes use of [YOLOX](https://github.com/Megvii-BaseDetection/YOLOX) as the detector from end-to-end, and uses deformable convolutions (DCN) to perform feature fusion of PAFPN outputs for reID embedding learning.
 
 <br>
 
 <p align="center">
-    <img src="./media/FairMOT-X.png" width="80%", height="80%"<br/>
+    <img src="./media/FairMOT-X.png" width="100%", height="100%"<br/>
     <em> </br> Overview of FairMOT-X Structure</em>
 </p>
 
@@ -25,11 +25,11 @@ Results on other variants will be added soon.
 <br>
 
 <p align="center">
-    <img src="./media/bdd1.gif" width="60%", height="60%"<br/>
+    <img src="./media/bdd1.gif" width="80%", height="80%"<br/>
 </p>
 
 <p align="center">
-    <img src="./media/bdd2.gif" width="60%", height="60%"<br/>
+    <img src="./media/bdd2.gif" width="80%", height="80%"<br/>
 </p>
 
 
