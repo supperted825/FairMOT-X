@@ -9,16 +9,29 @@ FairMOT-X is a multi-class multi object tracker based on [FairMOT](https://githu
     <em> </br> Overview of FairMOT-X Structure</em>
 </p>
 
+## Main Contributions
+
+* Modify [yolo_head.py](./src/lib/models/networks/yolo_head.py) for reID branch and reID embedding learning as done in FairMOT
+* Prepare dataset in [yolomot.py](./src/lib/datasets/yolomot.py) for MOT training, including mosaic implementation
+* Finetune training and tracking sequences in [yolotrainer.py](./src/lib/trains/yolotrainer.py) and [YoloTracker.py](./src/lib/tracker/YoloTracker.py)
+* Minor code adjustments for visualisation and writing results to JSON for BDD100K MOT
+
+
 ## Tracking Performance
 
 ### Results on BDD100K Dataset
 
-Results on other variants will be added soon.
+The following results were recorded after 20 epochs of training. Mosaic augmentation is disabled and L1 detection loss is enabled from epoch 15. FPS is calculated from the average of 200 validation sequences in BDD100K MOT on a single V100 32GB GPU.
 
 | Variant | FPS | mMOTA | mMOTP | mIDF1 |
 | - | - | - | - | - |
-| YOLOX-S | 36.1 | 16.7 | 67.1 | 25.6 |
-| YOLOX-M | 32.7 | 18.4 | 68.0 | 27.5 |
+| YOLOX-S (reID dim 128) | 36.1 | 16.7 | 67.1 | 25.6 |
+| YOLOX-M (reID dim 128) | 32.7 | 18.4 | 68.0 | 27.5 |
+| YOLOX-L (reID dim 64) | 32.7 | 19.6 | 67.5 | 29.2 |
+| YOLOX-L (reID dim 128) |  |  |  |  |
+| YOLOX-L (reID dim 256) |  |  |  |  |
+| YOLOX-X (reID dim 128) |  |  |  |  |
+
 
 ### Video Demos from BDD100K MOT
 
@@ -31,8 +44,6 @@ Results on other variants will be added soon.
 <p align="center">
     <img src="./media/bdd2.gif" width="80%", height="80%"<br/>
 </p>
-
-
 
 ## Installation
 
