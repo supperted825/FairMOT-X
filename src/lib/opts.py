@@ -140,7 +140,7 @@ class opts(object):
 
         # demo
         self.parser.add_argument('--input_video', default="", help='video to demo')
-        self.parser.add_argument('--output_format', default="", help='demo output format')
+        self.parser.add_argument('--output_format', default="video", help='demo output format')
 
         # test
         self.parser.add_argument('--K',
