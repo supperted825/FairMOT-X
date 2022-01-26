@@ -38,6 +38,27 @@ Results on other variants will be added soon.
 
 Please refer to the [FairMOT installation instructions](https://github.com/ifzhang/FairMOT#Installation) to install the required dependencies.
 
+## Train & Demo
+
+The following command runs training with YOLOX-M as the detector. The corresponding network depth and width must be specified, or the default (YOLOX-L) will be used.
+
+```
+python3 ./src/train.py mot \
+    --exp_id yolo-m --yolo_depth 0.67 --yolo_width 0.75 \
+    --lr 7e-4 --lr_step 2 \
+    --reid_dim 128 --augment --mosaic \
+    --batch_size 16 --gpus 0 
+```
+
+To run the demo after training, you can refer to the following example:
+
+```
+python3 -W ignore ./src/demo.py mot \
+	--load_model path_to_model.pth \
+    --input_video path_to_video_or_folder_of_images \
+    --reid_dim 128 --yolo_depth 0.67 --yolo_width 0.75
+```
+
 ## Acknowledgement
 
 This project heavily uses code from [YOLOX](https://github.com/Megvii-BaseDetection/YOLOX), the original [FairMOT](https://github.com/ifzhang/FairMOT), as well as [MCMOT](https://github.com/CaptainEven/MCMOT) and [YOLOv4 MCMOT](https://github.com/CaptainEven/YOLOV4_MCMOT).
