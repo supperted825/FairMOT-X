@@ -54,7 +54,7 @@ To run the demo after training, you can refer to the following example:
 
 ```
 python3 -W ignore ./src/demo.py mot \
-	--load_model path_to_model.pth \
+    --load_model path_to_model.pth \
     --input_video path_to_video_or_folder_of_images \
     --reid_dim 128 --yolo_depth 0.67 --yolo_width 0.75
 ```
