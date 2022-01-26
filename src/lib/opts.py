@@ -183,7 +183,7 @@ class opts(object):
                                 help='confidence thresh for tracking')
         self.parser.add_argument('--det_thre',
                                  type=float,
-                                 default=0.2,
+                                 default=0.4,
                                  help='confidence thresh for detection')
         self.parser.add_argument('--nms_thre',
                                  type=float,
@@ -352,7 +352,7 @@ class opts(object):
         print('The output will be saved to ', opt.save_dir)
 
         if opt.resume and opt.load_model == '':
-            model_path = os.path.join('/hpctmp/e0425991/modelrepo/MCMOT/', opt.exp_id)
+            model_path = os.path.join('/hpctmp/e0425991/modelrepo/FairMOT-X/', opt.exp_id)
             opt.load_model = os.path.join(model_path, 'model_last.pth')
 
             if not os.path.exists(opt.load_model):

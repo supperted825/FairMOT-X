@@ -59,9 +59,11 @@ def write_results(filename, results, data_type):
     logger.info('save results to {}'.format(filename))
     
 
-def write_bdd_results(filename, results):
+def write_bdd_results(filename, results, img_dim=(720, 1280), bbox_dim=(576, 1024)):
 
     videoName = filename.split("/")[-1].split(".")[0]
+    im_h, im_w = img_dim
+    bbox_h, bbox_w = bbox_dim
     
     json_results = [{
             "videoName"     : videoName,
@@ -80,6 +82,10 @@ def write_bdd_results(filename, results):
                 l_dict['category'] = class_names[int(class_id)]
                 x1, y1, w, h = tlwh
                 x2, y2 = x1 + w, y1 + h
+                x1 *= im_w / bbox_w
+                x2  *= im_w / bbox_w
+                y1 *= im_h / bbox_h
+                y2  *= im_h / bbox_h
                 l_dict['box2d'] = {'x1': x1, 'x2': x2, 'y1': y1, 'y2': y2}
                 json_results[frame-1]["labels"].append(l_dict)
                 
@@ -111,7 +117,7 @@ def format_dets_dict2dets_list(dets_dict, w, h):
 
 def eval_seq(opt,
              data_loader,
-             data_type,
+             write_result,
              result_f_name,
              save_dir=None,
              show_image=True,
@@ -199,7 +205,8 @@ def eval_seq(opt,
         frame_id += 1
 
     # write track/detection results
-    write_bdd_results(result_f_name, results_dict)
+    if write_result:
+        write_bdd_results(result_f_name, results_dict)
 
     return frame_id, timer.average_time, timer.calls
 
@@ -238,7 +245,7 @@ def main(opt,
 
         frame_rate = 30
         
-        nf, ta, tc = eval_seq(opt, dataloader, data_type, result_filename,
+        nf, ta, tc = eval_seq(opt, dataloader, True, result_filename,
                               save_dir=output_dir, show_image=show_image, frame_rate=frame_rate)
         
         n_frame += nf

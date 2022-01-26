@@ -564,7 +564,7 @@ class YOLOTracker(object):
             # Perform Embedding Distance Calculations & Assignment
             dists = matching.embedding_distance(track_pool_dict[cls_id], cls_detections)
             dists = matching.fuse_motion(self.kalman_filter, dists, track_pool_dict[cls_id], cls_detections)
-            matches, u_track, u_detection = matching.linear_assignment(dists, thresh=0.4)
+            matches, u_track, u_detection = matching.linear_assignment(dists, thresh=0.7)
             
             # Process Matched Pairs between Track Pool & Current Detections
             for i_tracked, i_det in matches:
@@ -586,7 +586,7 @@ class YOLOTracker(object):
             
             # Perform IoU Distance Calculations & Assignment
             dists = matching.iou_distance(r_tracked_tracks, cls_detections)
-            matches, u_track, u_detection = matching.linear_assignment(dists, thresh=0.9)
+            matches, u_track, u_detection = matching.linear_assignment(dists, thresh=0.5)
             
             # Process Matched Pairs between Track Pool & Current Detections
             for i_tracked, i_det in matches:

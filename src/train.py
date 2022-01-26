@@ -81,10 +81,9 @@ def run(opt):
     
     for epoch in range(start_epoch + 1, opt.num_epochs + 1):
         
-        if epoch >= 15:
-            print('No Augmentation from Epoch 15', flush=True)
+        if epoch >= opt.num_epochs - 5:
+            print('No Mosaic from Epoch 15 - Now Using L1 Loss', flush=True)
             dataset.mosaic = False
-            dataset.augment = False
             model.head.use_l1 = True
 
         # Train an epoch

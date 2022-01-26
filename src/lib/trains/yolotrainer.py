@@ -119,7 +119,8 @@ class YOLOTrainer(object):
             del imgs, det_labels, track_ids, loss, loss_stats, loss_actual
 
         # Shuffle Dataset Every Epoch
-        data_loader.dataset.shuffle()  # re-assign file id for each idx
+        if phase == 'train':
+            data_loader.dataset.shuffle()  # re-assign file id for each idx
 
         bar.finish()
         ret = {k: v.avg for k, v in avg_loss_stats.items()}
