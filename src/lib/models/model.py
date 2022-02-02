@@ -76,8 +76,12 @@ def load_model(model,
             state_dict[k[7:]] = state_dict_[k]
         else:
             state_dict[k] = state_dict_[k]
+            
+    if "yolox_" in model_path:
+      state_dict = state_dict_["model"]
+    
     model_state_dict = model.state_dict()
-
+    
     # check loaded parameters and created model parameters
     for k in state_dict:
         if k in model_state_dict:
@@ -87,7 +91,7 @@ def load_model(model,
                     k, model_state_dict[k].shape, state_dict[k].shape))
                 state_dict[k] = model_state_dict[k]
         else:
-            # print('Drop parameter {}.'.format(k))
+            print('Drop parameter {}.'.format(k))
             pass
     for k in model_state_dict:
         if not (k in state_dict):
