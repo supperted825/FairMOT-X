@@ -11,14 +11,18 @@ import os
 import cv2
 import math
 
+import pickle
+
 from sklearn import metrics
 from scipy import interpolate
 import numpy as np
+from tqdm import tqdm
 from torchvision.transforms import transforms as T
 import torch.nn.functional as F
 from models.model import create_model, load_model
 from datasets.dataset.jde import JointDataset, collate_fn
 from models.utils import _tranpose_and_gather_feat
+from lib.datasets.dataset_factory import get_dataset
 from utils.utils import xywh2xyxy, ap_per_class, bbox_iou
 from opts import opts
 from models.decode import mot_decode
@@ -28,8 +32,8 @@ from utils.post_process import ctdet_post_process
 def test_emb(
         opt,
         batch_size=16,
-        img_size=(1088, 608),
-        print_interval=40, ):
+        img_size=(1024, 576),
+        print_interval=100, ):
     """
     :param opt:
     :param batch_size:
@@ -42,64 +46,108 @@ def test_emb(
     data_cfg_dict = json.load(f)
     f.close()
     nC = 1
-    test_paths = data_cfg_dict['test_emb']
-    dataset_root = data_cfg_dict['root']
+    test_paths = list(data_cfg_dict['test_emb'].values())[0]
     if opt.gpus[0] >= 0:
         opt.device = torch.device('cuda')
     else:
         opt.device = torch.device('cpu')
         
     print('Creating model...')
-    model = create_model(opt.arch, opt.heads, opt.head_conv)
+    model = create_model(opt.arch, opt=opt)
     model = load_model(model, opt.load_model)
-    # model = torch.nn.DataParallel(model)
     model = model.to(opt.device)
     model.eval()
+    
+    Dataset = get_dataset(opt.task, opt.multi_scale)  # if opt.task==mot -> JointDataset
 
     # Get data loader
     transforms = T.Compose([T.ToTensor()])
-    dataset = JointDataset(opt, dataset_root, test_paths, img_size, augment=False, transforms=transforms)
+    dataset = Dataset(test_paths, opt=opt)
+    
+    print("Length of Dataset: ", len(dataset))
+    
     data_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=False,
-                                              num_workers=8, drop_last=False)
+                                            num_workers=8, drop_last=False, collate_fn=dataset.collate_fn)
+    
+    emb_scale_dict = dict()
+    for cls_id, nID in opt.nID_dict.items():
+        emb_scale_dict[cls_id] = math.sqrt(2) * math.log(nID - 1)
     embedding, id_labels = [], []
+    
     print('Extracting features...')
-    for batch_i, batch in enumerate(data_loader):
-        t = time.time()
-        output = model(batch['input'].cuda())[-1]
-        id_head = _tranpose_and_gather_feat(output['id'], batch['ind'].cuda())
-        id_head = id_head[batch['reg_mask'].cuda() > 0].contiguous()
-        emb_scale = math.sqrt(2) * math.log(opt.nID - 1)
-        id_head = emb_scale * F.normalize(id_head)
-        id_target = batch['ids'].cuda()[batch['reg_mask'].cuda() > 0]
+    for batch_i, (imgs, det_labels, track_ids) in tqdm(enumerate(data_loader), total=len(data_loader)):
+        
+        id_head = []
+        batch_id_labels = []
+        
+        imgs = imgs.float().to(device=opt.device, non_blocking=True)
+        multibatch_det_labels = det_labels.to(device=opt.device, non_blocking=True)
+        multibatch_track_ids = track_ids.to(device=opt.device, non_blocking=True)
+        
+        outputs, reid_features = model.forward(imgs)
 
-        for i in range(0, id_head.shape[0]):
-            if len(id_head.shape) == 0:
+        for batch_idx in range(outputs.shape[0]):
+            num_gt = multibatch_det_labels[multibatch_det_labels[:, 0] == batch_idx].shape[0]
+        
+            batch_det_labels = multibatch_det_labels[multibatch_det_labels[:, 0] == batch_idx]
+            gt_bboxes_per_image = batch_det_labels[ :num_gt, 2:6]
+
+            # ----- ReID Loss Calculation
+            
+            # Nothing to Train if No Ground Truth IDs
+            if num_gt == 0:
+                continue
+            
+            # ReID Feature Map for this Image
+            img_features = reid_features[batch_idx]       # Ch x H x W
+            _, id_map_h, id_map_w = img_features.shape
+            
+            # Extract Center Coordinates of GT bboxes and Scale - center_xs, center_ys are arrays
+            ny, nx = imgs[batch_idx].shape[1], imgs[batch_idx].shape[2]
+            center_xs = gt_bboxes_per_image[:,0] * id_map_w / nx
+            center_ys = gt_bboxes_per_image[:,1] * id_map_h / ny
+
+            # Convert Center Coordinates to Int64
+            center_xs += 0.5
+            center_ys += 0.5
+            center_xs = center_xs.long()
+            center_ys = center_ys.long()
+
+            # Clip to stay within ReID Feature Map Range
+            center_xs.clamp_(0, id_map_w - 1)
+            center_ys.clamp_(0, id_map_h - 1)
+            
+            # Extract ReID Feature at Center Coordinates
+            # Since img_features has opt.reid_dim channels, we get 128 x nL, then transpose
+            id_head.extend(img_features[..., center_ys, center_xs].T)
+            
+            batch_id_labels.extend(multibatch_track_ids[multibatch_track_ids[:, 0] == batch_idx][:, 1])
+        
+        for i in range(0, len(id_head)):
+            if len(id_head[i].shape) == 0:
                 continue
             else:
-                feat, label = id_head[i], id_target[i].long()
+                feat, label = id_head[i], batch_id_labels[i]
             if label != -1:
                 embedding.append(feat)
                 id_labels.append(label)
-
+        
         if batch_i % print_interval == 0:
-            print('Extracting {}/{}, # of instances {}, time {:.2f} sec.'
-                  .format(batch_i, len(data_loader), len(id_labels),
-                          time.time() - t))
-
-    print('Computing pairwise similarity...')
-    if len(embedding) < 1:
-        return None
-
-    embedding = torch.stack(embedding, dim=0).cuda()
+            print(f"Num Identities: {len(id_labels)}")
+            
+    embedding = torch.stack(embedding, dim=0).cuda().to(torch.float16)
     id_labels = torch.LongTensor(id_labels)
     n = len(id_labels)
     print(n, len(embedding))
     assert len(embedding) == n
 
+    print("Preparing Data...")
     embedding = F.normalize(embedding, dim=1)
-    p_dist = torch.mm(embedding, embedding.t()).cpu().numpy()
+    p_dist = torch.mm(embedding, embedding.T).cpu().numpy()
     gt = id_labels.expand(n, n).eq(id_labels.expand(n, n).t()).numpy()
 
+    
+    print("Calculating Metrics...")
     up_triangle = np.where(np.triu(p_dist) - np.eye(n) * p_dist != 0)
     p_dist = p_dist[up_triangle]
     gt = gt[up_triangle]
@@ -109,12 +157,11 @@ def test_emb(
     interp = interpolate.interp1d(far, tar)
     tar_at_far = [interp(x) for x in far_levels]
     for f, fa in enumerate(far_levels):
-        print('TPR@FAR={:.7f}: {:.4f}'.format(fa, tar_at_far[f]))
+        print('TPR@FAR={:.7f}: {:.4f}'.format(fa, tar_at_far[f]), flush=True)
     return tar_at_far
 
-
 if __name__ == '__main__':
-    os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
     opt = opts().init()
     with torch.no_grad():
-        map = test_emb(opt, batch_size=4)
+        map = test_emb(opt, batch_size=16)
