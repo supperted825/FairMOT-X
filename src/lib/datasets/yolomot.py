@@ -7,7 +7,8 @@ import random
 import shutil
 import copy
 import time
-from collections import defaultdict
+import warnings
+from collections import defaultdict, OrderedDict
 from pathlib import Path
 from threading import Thread
 
@@ -116,7 +117,6 @@ class LoadImages:
         img = img[:, :, ::-1].transpose(2, 0, 1)
         img = np.ascontiguousarray(img, dtype=np.float32)
 
-        # cv2.imwrite(img_path + '.letterbox.jpg', 255 * img.transpose((1, 2, 0))[:, :, ::-1])  # save letterbox image
         return img_path, img, img_0
 
     def __getitem__(self, idx):
@@ -133,7 +133,6 @@ class LoadImages:
         # Normalize RGB: BGR -> RGB and H×W×C -> C×H×W
         img = img[:, :, ::-1].transpose(2, 0, 1)
         img = np.ascontiguousarray(img, dtype=np.float32)
-        img /= 255.0
 
         return img_path, img, img_0
 
@@ -185,7 +184,6 @@ class LoadVideo:  # for inference
         # Normalize RGB
         img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR->RGB and HWC->CHW
         img = np.ascontiguousarray(img, dtype=np.float32)
-        img /= 255.0
 
         # save letterbox image
         # cv2.imwrite(img_path + '.letterbox.jpg', 255 * img.transpose((1, 2, 0))[:, :, ::-1])
@@ -351,11 +349,9 @@ class YOLOMOT(Dataset):  # for training/testing
         # Path is .train or .val file
         assert os.path.isfile(path), 'File not found %s. See %s' % (path, help_url)
         
-        # ------ Check for QuickLoad of Labels & IDs
-        labels    = "/hpctmp/e0425991/datasets/bdd100k/bdd100k/MOT/cache/cached_labels.npy"
+        # ------ Check for QuickLoad of ID Counts
         tid_num   = "/hpctmp/e0425991/datasets/bdd100k/bdd100k/MOT/tid_num.json"
 
-        labelsval = "/hpctmp/e0425991/datasets/bdd100k/bdd100k/MOT/cache/cached_labelsval.npy"
         tidnumval = "/hpctmp/e0425991/datasets/bdd100k/bdd100k/MOT/tid_numval.json"
         
         # Get List of Img Files
@@ -379,12 +375,12 @@ class YOLOMOT(Dataset):  # for training/testing
         self.img_size = img_size
 
         # ------ Check for QuickLoad of Image Labels
-        if os.path.exists(tid_num) and not opt.val:
+        if os.path.exists(tid_num) and not opt.val and not opt.test_emb:
             print("Loading cached ID Dict...")
             with open(tid_num) as json_file:
                 self.tid_num = json.load(json_file)
         
-        elif os.path.exists(tidnumval) and opt.val:
+        elif os.path.exists(tidnumval) and opt.val and not opt.test_emb:
             print("Loading cached validation ID Dict...")
             with open(tidnumval) as json_file:
                 self.tid_num = json.load(json_file)
@@ -393,48 +389,46 @@ class YOLOMOT(Dataset):  # for training/testing
             # ----- Generate ID Counts
             print("Caching Labels & Generating ID Counts...")
             
+            max_ids_dict = defaultdict(int)  # cls_id => max track id
             self.tid_num = OrderedDict()
-            self.tid_start_index = OrderedDict()
-            
-            for ds, label_paths in self.label_files.items():
-                max_ids_dict = defaultdict(int)  # cls_id => max track id
 
-                for lp in tqdm(label_paths):
-                    if not os.path.isfile(lp):
-                        print('[WARNING] : Invalid Label File {}.'.format(lp))
-                        continue
+            # 子数据集中每个label
+            for lp in tqdm(self.label_files):
+                if not os.path.isfile(lp):
+                    print('[Warning]: invalid label file {}.'.format(lp))
+                    continue
+
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
 
                     lb = np.loadtxt(lp)
                     if len(lb) < 1:  # 空标签文件
                         continue
 
                     lb = lb.reshape(-1, 6)
-
-                    assert (lb >= 0).all(), 'Negative Labels: %s' % file
-                    assert (lb[:, 2:] <= 1).all(), 'Non-normalized or Out of Bounds Coordinates: %s' % file
-                
                     for item in lb:  # label中每一个item(检测目标)
                         if item[1] > max_ids_dict[int(item[0])]:  # item[0]: cls_id, item[1]: track id
                             max_ids_dict[int(item[0])] = item[1]
 
-                # track id number
-                self.tid_num[ds] = max_ids_dict  # 每个子数据集按照需要reid的cls_id组织成dict
+            # track id number
+            self.tid_num["bdd100k"] = max_ids_dict
                 
             # ----- save dicts to json to save time in future
-            if opt.val:
-                print("Writing cached max ID dict to JSON...")
-                with open(tidnumval, 'w', encoding='utf-8') as f:
-                    json.dump(self.tid_num, f, ensure_ascii=False, indent=4)    
-            else:
-                print("Writing cached validationmax ID dict to JSON...")
-                with open(tid_num, 'w', encoding='utf-8') as f:
-                    json.dump(self.tid_num, f, ensure_ascii=False, indent=4)  
+            if not opt.test_emb:
+                if opt.val:
+                    print("Writing cached max ID dict to JSON...")
+                    with open(tidnumval, 'w', encoding='utf-8') as f:
+                        json.dump(self.tid_num, f, ensure_ascii=False, indent=4)    
+                else:
+                    print("Writing cached validationmax ID dict to JSON...")
+                    with open(tid_num, 'w', encoding='utf-8') as f:
+                        json.dump(self.tid_num, f, ensure_ascii=False, indent=4)  
                     
         # @even: for MCMOT training
         self.tid_start_idx_of_cls_ids = defaultdict(dict)
-        last_idx_dict = defaultdict(int)  # 从0开始
-        for k, v in self.tid_num.items():  # 统计每一个子数据集
-            for cls_id, id_num in v.items():  # 统计这个子数据集的每一个类别, v是一个max_ids_dict
+        last_idx_dict = defaultdict(int)
+        for k, v in self.tid_num.items():
+            for cls_id, id_num in v.items():
                 self.tid_start_idx_of_cls_ids[k][int(cls_id)] = last_idx_dict[int(cls_id)]
                 last_idx_dict[int(cls_id)] += id_num
 
@@ -472,7 +466,9 @@ class YOLOMOT(Dataset):  # for training/testing
                 img = cv2.resize(img, self.img_size[::-1])
             
             labels = []
-            x = np.loadtxt(self.label_files[idx]).reshape(-1, 6)[:, [0, 2, 3, 4, 5]]  # Skip Loading Track IDs
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                x = np.loadtxt(self.label_files[idx]).reshape(-1, 6)[:, [0, 2, 3, 4, 5]]  # Skip Loading Track IDs
             if x.size > 0:
                 # Normaliseded xywh to pixel xyxy format:
                 # For compatibility with random_affine function
@@ -483,7 +479,9 @@ class YOLOMOT(Dataset):  # for training/testing
                 labels[:, 4] = resize_ratio * h * (x[:, 2] + x[:, 4] / 2)      # y2 = ct - h / 2
             
             # Now We Load Track IDs
-            track_ids = np.loadtxt(self.label_files[idx]).reshape(-1, 6)[:, 1]
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                track_ids = np.loadtxt(self.label_files[idx]).reshape(-1, 6)[:, 1]
         
         if self.augment:
             if not self.mosaic:
@@ -547,6 +545,7 @@ class YOLOMOT(Dataset):  # for training/testing
         img = np.ascontiguousarray(img)
 
         return torch.from_numpy(img), torch.from_numpy(det_labels_out), torch.from_numpy(track_ids_out)
+    
     
     @staticmethod
     def collate_fn(batch):
@@ -879,8 +878,10 @@ def load_mosaic_with_ids(self, index):
         
         # Load Image
         img, (h, w) = load_image(self, index)
-        labels = np.loadtxt(self.label_files[index]).reshape(-1, 6)[:, [0,2,3,4,5]]
-        track_ids = np.loadtxt(self.label_files[index]).reshape(-1, 6)[:, 1]
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            labels = np.loadtxt(self.label_files[index]).reshape(-1, 6)[:, [0,2,3,4,5]]
+            track_ids = np.loadtxt(self.label_files[index]).reshape(-1, 6)[:, 1]
 
         # Generate Coordinates for Each Corner
         # On First Run, Initialize Base Array with Arbitrary Pixel Value of 114
