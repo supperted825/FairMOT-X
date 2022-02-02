@@ -8,7 +8,7 @@ import time
 import warnings
 
 import cv2
-# import json
+import json
 import numpy as np
 import torch
 
@@ -281,8 +281,8 @@ class LoadImagesAndLabels:  # for training
                 if num_labels > 0:
                     labels[:, 2] = 1 - labels[:, 2]
 
-        img = np.ascontiguousarray(img[:, :, ::-1])  # BGR to RGB
-
+        img = img[:, :, ::-1]
+        img = np.ascontiguousarray(img)
         if self.transforms is not None:
             img = self.transforms(img)
 
@@ -1076,19 +1076,31 @@ class DetDataset(LoadImagesAndLabels):  # for training
                     '.png', '.txt').replace('.jpg', '.txt')
                 for x in self.img_files[ds]]
 
-        for ds, label_paths in self.label_files.items():
-            max_index = -1
-            for lp in label_paths:
-                lb = np.loadtxt(lp)
-                if len(lb) < 1:
-                    continue
-                if len(lb.shape) < 2:
-                    img_max = lb[1]
-                else:
-                    img_max = np.max(lb[:, 1])
-                if img_max > max_index:
-                    max_index = img_max
-            self.tid_num[ds] = max_index + 1
+        tidnumval = "/hpctmp/e0425991/datasets/bdd100k/bdd100k/MOT/tid_numval.json"
+        if os.path.exists(tidnumval):
+            print("Loading existing validation ID indexes...")
+            with open(tidnumval) as json_file:
+                self.tid_num = json.load(json_file)
+        else:
+            for ds, label_paths in self.label_files.items():
+                max_index = -1
+                for lp in tqdm(label_paths):
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        lb = np.loadtxt(lp)
+                    if len(lb) < 1:
+                        continue
+                    if len(lb.shape) < 2:
+                        img_max = lb[1]
+                    else:
+                        img_max = np.max(lb[:, 1])
+                    if img_max > max_index:
+                        max_index = img_max
+                self.tid_num[ds] = max_index + 1
+                
+            print("Writing validation ID index to JSON...")
+            with open(tidnumval, 'w', encoding='utf-8') as f:
+                json.dump(self.tid_num, f, ensure_ascii=False, indent=4) 
 
         last_index = 0
         for i, (k, v) in enumerate(self.tid_num.items()):
@@ -1121,11 +1133,24 @@ class DetDataset(LoadImagesAndLabels):  # for training
         img_path = self.img_files[ds][files_index - start_index]
         label_path = self.label_files[ds][files_index - start_index]
         if os.path.isfile(label_path):
-            labels0 = np.loadtxt(label_path, dtype=np.float32).reshape(-1, 6)
-
-        imgs, labels, img_path, (h, w) = self.get_data(img_path, label_path)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                labels0 = np.loadtxt(label_path, dtype=np.float32).reshape(-1, 6)
+        imgs = cv2.imread(img_path)
+        imgs = cv2.resize(imgs, (1024, 576))
+        assert imgs is not None
+        imgs = imgs[:, :, ::-1].transpose(2, 0, 1)
+        imgs = torch.from_numpy(np.ascontiguousarray(imgs))
+        _, labels, img_path, (h, w) = self.get_data(img_path, label_path)
         for i, _ in enumerate(labels):
             if labels[i, 1] > -1:
                 labels[i, 1] += self.tid_start_index[ds]
 
         return imgs, labels0, img_path, (h, w)
+
+def load_image(self, index):
+    # loads 1 image from dataset, returns img, original hw, resized hw
+    path = self.img_files[index]
+    img = cv2.imread(path)  # BGR
+    assert img is not None, 'Image Not Found ' + path
+    return img, img.shape[:2]
