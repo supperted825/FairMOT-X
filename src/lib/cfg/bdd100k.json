@@ -6,7 +6,7 @@
     },
     "test_emb":
     {
-        "bdd100k":"/home/svu/e0425991/FairMOT-X/src/data/bdd100k.val"
+        "bdd100k":"/home/svu/e0425991/FairMOT-X/src/data/bdd100k_emb.val"
     },
     "test":
     {
