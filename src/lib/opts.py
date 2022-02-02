@@ -16,6 +16,8 @@ class opts(object):
         self.parser.add_argument('--exp_id', default='default')
         self.parser.add_argument('--val', action='store_true')
         self.parser.add_argument('--test', action='store_true')
+        self.parser.add_argument('--test_emb', action='store_true')
+        self.parser.add_argument('--test_det', action='store_true')
         self.parser.add_argument('--start_epoch',
                                  type=int,
                                  default=1,
@@ -105,15 +107,15 @@ class opts(object):
         # train
         self.parser.add_argument('--lr',
                                  type=float,
-                                 default=7e-4,  # 1e-4, 7e-5, 5e-5, 3e-5
+                                 default=7e-5,  # 1e-4, 7e-5, 5e-5, 3e-5
                                  help='learning rate for batch size 32.')
         self.parser.add_argument('--lr_step',
                                  type=str,
-                                 default='20,27,35,40,50,60,75,80',  # 20,27
+                                 default='20,35,40,50,60,75,80',  # 20,27
                                  help='drop learning rate by 10.')
         self.parser.add_argument('--num_epochs',
                                  type=int,
-                                 default=20,  # 30, 10, 3, 1
+                                 default=30,  # 30, 10, 3, 1
                                  help='total training epochs.')
         self.parser.add_argument('--batch_size',
                                  type=int,
@@ -374,7 +376,7 @@ class opts(object):
         :return:
         """
         
-        opt.num_classes = dataset.num_classes
+        opt.num_classes = 8
 
         for reid_id in opt.reid_cls_ids.split(','):
             if int(reid_id) > opt.num_classes - 1:
