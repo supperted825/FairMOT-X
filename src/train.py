@@ -23,6 +23,7 @@ from lib.trains.train_factory import train_factory
 
 
 def run(opt):
+    opt.seed = torch.randint(low=0,high=opt.seed,size=(1,))[0]
     torch.manual_seed(opt.seed)
     torch.backends.cudnn.benchmark = not opt.not_cuda_benchmark and not opt.test
 
@@ -81,8 +82,8 @@ def run(opt):
     
     for epoch in range(start_epoch + 1, opt.num_epochs + 1):
         
-        if epoch >= opt.num_epochs - 5:
-            print('No Mosaic from Epoch 15 - Now Using L1 Loss', flush=True)
+        if epoch >= opt.num_epochs - int(opt.num_epochs-10):
+            print(f'No Mosaic from Epoch {int(opt.num_epochs-10)} - Now Using L1 Loss', flush=True)
             dataset.mosaic = False
             model.head.use_l1 = True
 
