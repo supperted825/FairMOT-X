@@ -147,8 +147,8 @@ def eval_seq(opt,
 
     frame_id = 0  # frame index
     for path, img, img0 in data_loader:
-        if frame_id % 30 == 0 and frame_id != 0:
-            logger.info('Processing frame {} ({:.2f} fps)'.format(frame_id, 1.0 / max(1e-5, timer.average_time)))
+        # if frame_id % 30 == 0 and frame_id != 0:
+            # logger.info('Processing frame {} ({:.2f} fps)'.format(frame_id, 1.0 / max(1e-5, timer.average_time)))
 
         # --- run tracking
         blob = torch.from_numpy(img).unsqueeze(0).to(opt.device)
