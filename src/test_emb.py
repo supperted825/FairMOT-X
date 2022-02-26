@@ -20,13 +20,8 @@ from tqdm import tqdm
 from torchvision.transforms import transforms as T
 import torch.nn.functional as F
 from models.model import create_model, load_model
-from datasets.dataset.jde import JointDataset, collate_fn
-from models.utils import _tranpose_and_gather_feat
 from lib.datasets.dataset_factory import get_dataset
-from utils.utils import xywh2xyxy, ap_per_class, bbox_iou
 from opts import opts
-from models.decode import mot_decode
-from utils.post_process import ctdet_post_process
 
 
 def test_emb(
@@ -75,7 +70,7 @@ def test_emb(
     embedding, id_labels = [], []
     
     print('Extracting features...')
-    for batch_i, (imgs, det_labels, track_ids) in tqdm(enumerate(data_loader), total=len(data_loader)):
+    for batch_i, (imgs, det_labels, track_ids) in enumerate(data_loader):
         
         id_head = []
         batch_id_labels = []
@@ -133,7 +128,8 @@ def test_emb(
                 id_labels.append(label)
         
         if batch_i % print_interval == 0:
-            print(f"Num Identities: {len(id_labels)}")
+            pass
+            # print(f"Num Identities: {len(id_labels)}")
             
     embedding = torch.stack(embedding, dim=0).cuda().to(torch.float16)
     id_labels = torch.LongTensor(id_labels)
@@ -156,6 +152,7 @@ def test_emb(
     far, tar, threshold = metrics.roc_curve(gt, p_dist)
     interp = interpolate.interp1d(far, tar)
     tar_at_far = [interp(x) for x in far_levels]
+    print(opt.load_model)
     for f, fa in enumerate(far_levels):
         print('TPR@FAR={:.7f}: {:.4f}'.format(fa, tar_at_far[f]), flush=True)
     return tar_at_far

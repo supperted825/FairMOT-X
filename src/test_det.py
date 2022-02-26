@@ -17,7 +17,6 @@ from scipy import interpolate
 import numpy as np
 from torchvision.transforms import transforms as T
 from models.model import create_model, load_model
-from datasets.yolomot import YOLOMOT
 from datasets.dataset.jde import DetDataset, collate_fn
 from utils.utils import xywh2xyxy, ap_per_class, bbox_iou
 from opts import opts
@@ -67,7 +66,7 @@ def test_det(
     
     mean_mAP, mean_R, mean_P, seen = 0.0, 0.0, 0.0, 0
     
-    print('%11s' * 5 % ('Image', 'Total', 'P', 'R', 'mAP'))
+    # print('%11s' * 5 % ('Image', 'Total', 'P', 'R', 'mAP'))
     
     outputs, mAPs, mR, mP, TP, confidence, pred_class, target_class, jdict = \
         [], [], [], [], [], [], [], [], []
@@ -178,11 +177,12 @@ def test_det(
             mean_P = np.sum(mP) / (np.sum(AP_accum_count) + 1E-16)
 
         if batch_i % print_interval == 0:
+            pass
             # Print image mAP and running mean mAP
-            print(('%11s%11s' + '%11.3g' * 4 + 's') %
-                  (seen, dataloader.dataset.nF, mean_P, mean_R, mean_mAP, time.time() - t))
+            # print(('%11s%11s' + '%11.3g' * 4 + 's') %
+            #(seen, dataloader.dataset.nF, mean_P, mean_R, mean_mAP, time.time() - t))
     # Print mAP per class
-    print('%11s' * 5 % ('Image', 'Total', 'P', 'R', 'mAP'))
+    # print('%11s' * 5 % ('Image', 'Total', 'P', 'R', 'mAP'))
 
     print('AP:', AP_accum / (AP_accum_count + 1E-16), flush=True)
     print('AP:', np.mean(AP_accum / (AP_accum_count + 1E-16)), flush=True)
