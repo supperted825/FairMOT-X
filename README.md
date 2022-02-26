@@ -21,16 +21,16 @@ FairMOT-X is a multi-class multi object tracker based on [FairMOT](https://githu
 
 ### Results on BDD100K Dataset
 
-The following results were recorded after 20 epochs of training. Mosaic augmentation is disabled and L1 detection loss is enabled from epoch 15. FPS is calculated from the average of 200 validation sequences in BDD100K MOT on a single V100 32GB GPU.
+The following results were recorded after 20 epochs of training. Mosaic augmentation is disabled and L1 detection loss is enabled from epoch 15. FPS is calculated from the average of 200 validation sequences in BDD100K MOT on a single V100 32GB GPU. No pretrained model is used.
 
 | Variant | FPS | mMOTA | mMOTP | mIDF1 |
 | - | - | - | - | - |
 | YOLOX-S (reID dim 128) | 36.1 | 16.7 | 67.1 | 25.6 |
 | YOLOX-M (reID dim 128) | 32.7 | 18.4 | 68.0 | 27.5 |
 | YOLOX-L (reID dim 64) | 32.7 | 19.6 | 67.5 | 29.2 |
-| YOLOX-L (reID dim 128) |  |  |  |  |
-| YOLOX-L (reID dim 256) |  |  |  |  |
-| YOLOX-X (reID dim 128) |  |  |  |  |
+| YOLOX-L (reID dim 128) | 26.2 | 19.2 | 67.1 | 28.7 |
+| YOLOX-L (reID dim 256) | 25.2 | 17.6 | 67.3 | 26.9 |
+| YOLOX-X (reID dim 128) | 20.9 | 10.4 | 64.7 | 16.4 |
 
 
 ### Video Demos from BDD100K MOT
