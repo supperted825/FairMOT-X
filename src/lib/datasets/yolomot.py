@@ -351,7 +351,6 @@ class YOLOMOT(Dataset):  # for training/testing
         
         # ------ Check for QuickLoad of ID Counts
         tid_num   = "/hpctmp/e0425991/datasets/bdd100k/bdd100k/MOT/tid_num.json"
-
         tidnumval = "/hpctmp/e0425991/datasets/bdd100k/bdd100k/MOT/tid_numval.json"
         
         # Get List of Img Files
