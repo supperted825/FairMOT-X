@@ -71,7 +71,7 @@ def run(opt):
                                                 collate_fn=dataset.collate_fn)
 
 
-    print('Starting training...')
+    print('Starting training...', flush=True)
     Trainer = train_factory[opt.task]
     trainer = Trainer(opt=opt, model=model, optimizer=optimizer)
     trainer.set_device(opt.gpus, opt.chunk_sizes, opt.device)
@@ -82,10 +82,16 @@ def run(opt):
     
     for epoch in range(start_epoch + 1, opt.num_epochs + 1):
         
-        if epoch >= opt.num_epochs - int(opt.num_epochs-10):
-            print(f'No Mosaic from Epoch {int(opt.num_epochs-10)} - Now Using L1 Loss', flush=True)
+        if epoch > 15:
+            print(f'No Mosaic from Epoch 15 - Now Using L1 Loss', flush=True)
             dataset.mosaic = False
             model.head.use_l1 = True
+            
+        if epoch > 20:
+            model.head.reid_only = True
+            model.head.detection_only = False
+            for param in model.backbone.parameters():
+                param.requires_grad = False
 
         # Train an epoch
         log_dict_train, _ = trainer.train(epoch, train_loader)
