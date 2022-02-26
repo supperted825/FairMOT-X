@@ -53,7 +53,6 @@ class FeatureFusor(nn.Module):
         self.p1_deform_conv_1 = DeformConv(int(in_channels[0] * width), reid_feat_dim)
         self.p2_deform_conv_2 = DeformConv(reid_feat_dim , reid_feat_dim)
         self.p1_deform_conv_2 = DeformConv(reid_feat_dim , reid_feat_dim)
-        
 
     def forward(self, inputs):
         p1, p2, p3 = inputs
@@ -184,6 +183,8 @@ class YOLOXHead(nn.Module):
         
         # ----- For ReID Branch
         self.uncertainty_loss = opt.uncertainty_loss
+        self.detection_only = opt.detection_only
+        self.reid_only = opt.reid_only
         self.feature_map = FeatureFusor(in_channels, width, opt.reid_dim)
         self.reid_loss = nn.CrossEntropyLoss()
 
@@ -557,17 +558,25 @@ class YOLOXHead(nn.Module):
             loss_l1 = (self.l1_loss(origin_preds.view(-1, 4)[fg_masks], l1_targets)).sum() / num_fg
         else:
             loss_l1 = 0.0
-            
-        reid_loss /= num_fg
         
         # ----- Combine Losses
         reg_weight = 5.0
         det_loss = reg_weight * loss_iou + loss_obj + loss_cls + loss_l1
         
-        if self.uncertainty_loss:
-            loss = torch.exp(-self.s_det) * det_loss + torch.exp(-self.s_id) * reid_loss + (self.s_det + self.s_id)
+        if self.detection_only:
+            reid_loss = 0.0
+        elif self.reid_only:
+            det_loss = 0.0
+            
+        reid_loss /= num_fg
+        
+        if self.detection_only or self.reid_only:
+            loss = det_loss + reid_loss
         else:
-            loss = det_loss + 0.1 * reid_loss
+            if self.uncertainty_loss:
+                loss = torch.exp(-self.s_det) * det_loss + torch.exp(-self.s_id) * reid_loss + (self.s_det + self.s_id)
+            else:
+                loss = det_loss + 0.1 * reid_loss
 
         return (
             loss, 
