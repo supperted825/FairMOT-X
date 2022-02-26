@@ -69,12 +69,15 @@ class opts(object):
                                  help='model architecture. Currently tested'
                                       'resdcn_18 |resdcn_34 | resdcn_50 | resfpndcn_34 |'
                                       'dla_34 | hrnet_32 | hrnet_18 | cspdarknet_53 | regnet | effdet')
+        self.parser.add_argument('--yolo',
+                            default="l",
+                            help='YOLO-X scale: S, M, L, X, etc.')
         self.parser.add_argument('--yolo_depth',
-                                 default=1.0,
+                                 default=-1,
                                  type=float,
                                  help='YOLO-X depth scaling for S, M, L, X, etc.')
         self.parser.add_argument('--yolo_width',
-                                 default=1.0,
+                                 default=-1,
                                  type=float,
                                  help='YOLO-X width scaling for S, M, L, X, etc.')
         self.parser.add_argument('--head_conv',
@@ -115,7 +118,7 @@ class opts(object):
                                  help='drop learning rate by 10.')
         self.parser.add_argument('--num_epochs',
                                  type=int,
-                                 default=30,  # 30, 10, 3, 1
+                                 default=20,  # 30, 10, 3, 1
                                  help='total training epochs.')
         self.parser.add_argument('--batch_size',
                                  type=int,
@@ -234,6 +237,13 @@ class opts(object):
                                  action='store_false')
         self.parser.set_defaults(uncertainty_loss=True)
         
+        self.parser.add_argument('--detection_only',
+                                 dest='detection_only',
+                                 action='store_true')
+        
+        self.parser.add_argument('--reid_only',
+                                 action='store_true')
+        
         self.parser.add_argument('--l1_loss',
                                  action='store_true')
         
@@ -296,7 +306,7 @@ class opts(object):
         # bicycle         (8),  --> 7
         # -----------------------------------------------------------------------
 
-        # others          (11)
+
         self.parser.add_argument('--reid_cls_ids',
                                  default='0,1,2,3,4,5,6,7',
                                  help='')  # the object classes need to do reid
@@ -377,6 +387,18 @@ class opts(object):
         """
         
         opt.num_classes = 8
+        
+        yolo_dict = {
+            "s" : (0.33, 0.50),
+            "m" : (0.67, 0.75),
+            "l" : (1.00, 1.00),
+            "x" : (1.33, 1.25)
+        }
+        
+        if opt.yolo_depth == -1 or opt.yolo_width == -1:
+            print(f"Using Model Scale for YOLOX-{opt.yolo.upper()}")
+            opt.yolo_depth, opt.yolo_width = yolo_dict[opt.yolo]
+        
 
         for reid_id in opt.reid_cls_ids.split(','):
             if int(reid_id) > opt.num_classes - 1:
