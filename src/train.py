@@ -79,6 +79,10 @@ def run(opt):
     if opt.l1_loss:
         print("Training with L1 Loss from Start", flush=True)
         model.head.use_l1 = True
+        
+    if opt.reid_only or opt.freeze_backbone:
+        for param in model.backbone.parameters():
+                param.requires_grad = False
     
     for epoch in range(start_epoch + 1, opt.num_epochs + 1):
         
@@ -87,7 +91,7 @@ def run(opt):
             dataset.mosaic = False
             model.head.use_l1 = True
             
-        if epoch > 20:
+        if epoch > 20 and opt.detection_only:
             model.head.reid_only = True
             model.head.detection_only = False
             for param in model.backbone.parameters():
