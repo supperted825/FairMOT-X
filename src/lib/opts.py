@@ -163,6 +163,9 @@ class opts(object):
                                  action='store_true',
                                  help='keep the original resolution'
                                       ' during validation.')
+        self.parser.add_argument('--kitti_test',
+                                 action='store_true')
+
         # tracking
         self.parser.add_argument(
             '--test_mot16', default=False, help='test mot16')
@@ -220,7 +223,7 @@ class opts(object):
                                  default='../results',
                                  help='expected output root path')
 
-        # mot: 选择数据集的配置文件
+        # dataset
         self.parser.add_argument('--data_cfg', type=str,
                                  default='/home/svu/e0425991/FairMOT-X/src/lib/cfg/bdd100k.json',  # mcmot.json, mcmot_det.json,
                                  help='load data from cfg')
@@ -242,6 +245,9 @@ class opts(object):
                                  action='store_true')
         
         self.parser.add_argument('--reid_only',
+                                 action='store_true')
+        
+        self.parser.add_argument('--freeze_backbone',
                                  action='store_true')
         
         self.parser.add_argument('--l1_loss',
@@ -273,6 +279,10 @@ class opts(object):
                                  type=int,
                                  default=128,  # 128, 256, 512
                                  help='feature dim for reid')
+        self.parser.add_argument('--post_conv_layers',
+                                 type=int,
+                                 default=0,  # 128, 256, 512
+                                 help='num conv2d layers after feature fusion for reid')
         self.parser.add_argument('--input_wh',
                                  type=tuple,
                                  default=(1024, 576),  # (768, 448) or (1088, 608)
