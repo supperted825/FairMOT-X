@@ -36,30 +36,51 @@ from lib.opts import opts
 class_names = ["pedestrian", "rider", "car", "truck", "bus", "train", "motorcycle", "bicycle"]
 
 
-def write_results(filename, results, data_type):
+def write_results(filename, results, data_type, img_dim=(375, 1242), bbox_dim=(576, 1024), padding=(0,0)):
+    
     if data_type == 'mot':
         save_format = '{frame},{id},{x1},{y1},{w},{h},1,-1,-1,-1\n'
     elif data_type == 'kitti':
-        save_format = '{frame} {id} pedestrian 0 0 -10 {x1} {y1} {x2} {y2} -10 -10 -10 -1000 -1000 -1000 -10\n'
+        save_format = '{frame} {id} {cls} 0 3 -10 {x1} {y1} {x2} {y2} -10 -10 -10 -1000 -1000 -1000 {score}\n'
     else:
         raise ValueError(data_type)
+    
+    im_h, im_w = img_dim
+    bbox_h, bbox_w = bbox_dim
+    
+    with open(filename, 'w') as file:
+        # Each Class Has List of Frame Index
+        for class_id, frames in results.items():
+            
+            # Convert BDD results to only KITTI classes
+            if class_id == 0:
+                cls_name = 'pedestrian'
+            elif class_id == 2:
+                cls_name = 'car'
+            else:
+                continue
+            
+            # Each Frame is (frameIndex, list(bboxes), list(track IDs), list(scores))
+            for (frame, bboxes, track_ids, scores) in frames:
+                for tlwh, track_id, score in zip(bboxes, track_ids, scores):
+                    l_dict = {}
+                    l_dict['category'] = class_names[int(class_id)]
+                    x1, y1, w, h = tlwh
+                    x1 -= padding[0]
+                    y1 -= padding[1]
+                    x1 *= im_w / (bbox_w - 2 * padding[0])
+                    w  *= im_w / (bbox_w - 2 * padding[0])
+                    y1 *= im_h / (bbox_h - 2 * padding[1])
+                    h  *= im_h / (bbox_h - 2 * padding[1])
+                    line = save_format.format(
+                                frame=frame-1, id=track_id, cls=cls_name,
+                                x1=x1, y1=y1, x2=x1+w, y2=y1+h, score=score)
+                    file.write(line)
 
-    with open(filename, 'w') as f:
-        for frame_id, tlwhs, track_ids in results:
-            if data_type == 'kitti':
-                frame_id -= 1
-            for tlwh, track_id in zip(tlwhs, track_ids):
-                if track_id < 0:
-                    continue
-                x1, y1, w, h = tlwh
-                x2, y2 = x1 + w, y1 + h
-                line = save_format.format(
-                    frame=frame_id, id=track_id, x1=x1, y1=y1, x2=x2, y2=y2, w=w, h=h)
-                f.write(line)
     logger.info('save results to {}'.format(filename))
     
 
-def write_bdd_results(filename, results, img_dim=(720, 1280), bbox_dim=(576, 1024)):
+def write_bdd_results(filename, results, img_dim=(720, 1280), bbox_dim=(576, 1024), padding=(0,0)):
 
     videoName = filename.split("/")[-1].split(".")[0]
     im_h, im_w = img_dim
@@ -122,7 +143,8 @@ def eval_seq(opt,
              save_dir=None,
              show_image=True,
              frame_rate=30,
-             mode='track'):
+             mode='track',
+             data_type='bdd'):
     """
     :param opt:
     :param data_loader:
@@ -146,7 +168,7 @@ def eval_seq(opt,
     results_dict = defaultdict(list)
 
     frame_id = 0  # frame index
-    for path, img, img0 in data_loader:
+    for path, img, img0, (dw, dh) in data_loader:
         # if frame_id % 30 == 0 and frame_id != 0:
             # logger.info('Processing frame {} ({:.2f} fps)'.format(frame_id, 1.0 / max(1e-5, timer.average_time)))
 
@@ -189,6 +211,7 @@ def eval_seq(opt,
                 if frame_id > 0:
                     online_im: ndarray = vis.plot_tracks(image=img0,
                                                          bbox_dim=(576, 1024),
+                                                         padding=(dw, dh),
                                                          tlwhs_dict=online_tlwhs_dict,
                                                          obj_ids_dict=online_ids_dict,
                                                          num_classes=opt.num_classes,
@@ -206,7 +229,10 @@ def eval_seq(opt,
 
     # write track/detection results
     if write_result:
-        write_bdd_results(result_f_name, results_dict)
+        if data_type == 'bdd':
+            write_bdd_results(result_f_name, results_dict)
+        else:
+            write_results(result_f_name, results_dict, 'kitti', padding=(dw, dh))
 
     return frame_id, timer.average_time, timer.calls
 
@@ -224,11 +250,11 @@ def main(opt,
     epochnum = int(opt.load_model.split("_")[-1][:-4])
 
     exp_root = f"/home/svu/e0425991/FairMOT-X/results/val/{exp_name}"
-    result_root = f"/home/svu/e0425991/FairMOT-X/results/val/{exp_name}/epoch{epochnum}"
+    result_root = f"/home/svu/e0425991/FairMOT-X/results/val/{exp_name}/{epochnum}/"
     mkdir_if_missing(exp_root)
     mkdir_if_missing(result_root)
     
-    data_type = 'bdd'
+    data_type = 'bdd' if not opt.kitti_test else 'kitti'
 
     # run tracking
     accs = []
@@ -236,6 +262,10 @@ def main(opt,
     timer_avgs, timer_calls = [], []
     
     for seq in tqdm(seqs):
+        
+        if seq in ".DS_Store":
+            continue        
+        
         output_dir = osp.join(data_root, '..', 'outputs', exp_name, seq) if save_images or save_videos else None
         logger.info('start seq: {}'.format(seq))
         
@@ -246,7 +276,8 @@ def main(opt,
         frame_rate = 30
         
         nf, ta, tc = eval_seq(opt, dataloader, True, result_filename,
-                              save_dir=output_dir, show_image=show_image, frame_rate=frame_rate)
+                              save_dir=output_dir, show_image=show_image,
+                              frame_rate=frame_rate, data_type=data_type)
         
         n_frame += nf
         timer_avgs.append(ta)
@@ -275,7 +306,11 @@ if __name__ == '__main__':
     opt = opts().init()
     opt.device = FindFreeGPU()
     
-    val_data = "/hpctmp/e0425991/datasets/bdd100k/bdd100k/images/track/val/"
+    if opt.kitti_test:
+        val_data = "/hpctmp/e0425991/kitti_test/"
+    else:
+        val_data = "/hpctmp/e0425991/datasets/bdd100k/bdd100k/images/track/val/"
+
     seqs = os.listdir(val_data)
 
     main(opt,

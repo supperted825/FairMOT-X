@@ -111,13 +111,13 @@ class LoadImages:
         assert img_0 is not None, 'Failed to load ' + img_path
 
         # Padded resize
-        img, _, _ = letterbox(img_0, (self.height, self.width))
+        img, _, (dw, dh) = letterbox(img_0, (self.height, self.width))
 
         # Normalize RGB
         img = img[:, :, ::-1].transpose(2, 0, 1)
         img = np.ascontiguousarray(img, dtype=np.float32)
 
-        return img_path, img, img_0
+        return img_path, img, img_0, (dw, dh)
 
     def __getitem__(self, idx):
         idx = idx % self.nF
@@ -695,9 +695,7 @@ def letterbox(img,
     ratio = r, r  # width, height ratios
     new_unpad = int(round(shape[1] * r)), int(round(shape[0] * r))
     dw, dh = new_shape[1] - new_unpad[0], new_shape[0] - new_unpad[1]  # wh padding
-    if auto:  # minimum rectangle
-        dw, dh = np.mod(dw, 64), np.mod(dh, 64)  # wh padding
-    elif scaleFill:  # stretch
+    if scaleFill:  # stretch
         dw, dh = 0.0, 0.0
         new_unpad = new_shape
         ratio = new_shape[0] / shape[1], new_shape[1] / shape[0]  # width, height ratios
